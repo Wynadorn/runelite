@@ -542,7 +542,7 @@ public class MenuEntrySwapperPlugin extends Plugin
 		// Deposit- op 1 is the current withdraw amount 1/5/10/x
 		if (shiftModifier() && config.bankWithdrawShiftClick() != ShiftWithdrawMode.OFF
 			&& menuEntryAdded.getType() == MenuAction.CC_OP.getId() && (menuEntryAdded.getIdentifier() == 2 || menuEntryAdded.getIdentifier() == 1)
-			&& menuEntryAdded.getOption().startsWith("Withdraw-"))
+			&& menuEntryAdded.getOption().startsWith("Withdraw"))
 		{
 			ShiftWithdrawMode shiftWithdrawMode = config.bankWithdrawShiftClick();
 
@@ -556,7 +556,7 @@ public class MenuEntrySwapperPlugin extends Plugin
 			else
 			{
 				actionId = shiftWithdrawMode.getMenuAction().getId();
-				opId = WidgetInfo.TO_GROUP(menuEntryAdded.getActionParam1()) == WidgetID.SEED_VAULT_GROUP_ID ? shiftWithdrawMode.getIdentifierSeedVault() : shiftWithdrawMode.getIdentifier();
+				opId = widgetGroupId == WidgetID.SEED_VAULT_GROUP_ID ? shiftWithdrawMode.getIdentifierSeedVault() : shiftWithdrawMode.getIdentifier();
 			}
 			bankModeSwap(actionId, opId);
 		}
