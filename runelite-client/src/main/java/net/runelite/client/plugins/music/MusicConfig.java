@@ -24,13 +24,69 @@
  */
 package net.runelite.client.plugins.music;
 
+import java.awt.Color;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 
 @ConfigGroup("music")
 public interface MusicConfig extends Config
 {
+	@ConfigSection(
+		name = "Custom Filters",
+		description = "Create custom sound effect filters",
+		position = 99
+	)
+	String customFiltersSection = "customFilters";
+
+	@ConfigItem(
+		keyName = "enableCustomFilters",
+		name = "Enable Custom Filters",
+		description = "Configures whether the custom filter is active",
+		position = 1,
+		section = customFiltersSection
+	)
+	default boolean customFiltersEnabled()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		position = 2,
+		keyName = "listSoundsMenu",
+		name = "List Sounds",
+		description = "List recently played sounds",
+		section = customFiltersSection
+	)
+	default boolean listSoundEffects()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		position = 3,
+		keyName = "soundsToFilter",
+		name = "Sounds to filter",
+		description = "List of sound effects to filter",
+		section = customFiltersSection
+	)
+	default String getCustomFilteredSounds()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "soundsToFilter",
+		name = "",
+		description = "",
+		section = customFiltersSection
+	)
+	void setCustomFilteredSounds(String soundsToFilter);
+
+
+
+
 	@ConfigItem(
 		keyName = "muteOwnAreaSounds",
 		name = "Mute player area sounds",

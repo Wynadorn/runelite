@@ -73,6 +73,8 @@ import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.game.chatbox.ChatboxTextInput;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.devtools.DevToolsPlugin;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 
@@ -119,6 +121,9 @@ public class MusicPlugin extends Plugin
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private OverlayManager overlayManager;
 
 	@Inject
 	private ClientThread clientThread;
@@ -262,6 +267,11 @@ public class MusicPlugin extends Plugin
 		if (configChanged.getGroup().equals("music"))
 		{
 			clientThread.invokeLater(this::applyMusicVolumeConfig);
+		}
+
+		if(musicConfig.listSoundEffects())
+		{
+			showSoundEffectsOverlay();
 		}
 	}
 
@@ -660,10 +670,54 @@ public class MusicPlugin extends Plugin
 	@Subscribe
 	public void onSoundEffectPlayed(SoundEffectPlayed soundEffectPlayed)
 	{
+		soundEffectOverlay.onSoundEffectPlayed((soundEffectPlayed));
+
 		if (musicConfig.mutePrayerSounds()
 			&& PRAYER_SOUNDS.contains(soundEffectPlayed.getSoundId()))
 		{
 			soundEffectPlayed.consume();
+		}
+
+		if(musicConfig.customFiltersEnabled())
+		{
+			String[] mutedSoundIds = musicConfig.getCustomFilteredSounds().split(",");
+
+			for(int i = 0;i < mutedSoundIds.length;i++)
+			{
+				try
+				{
+					int soundId = Integer.parseInt(mutedSoundIds[i]);
+					if(Integer.parseInt(mutedSoundIds[i]) == soundEffectPlayed.getSoundId())
+					{
+						soundEffectPlayed.consume();
+					}
+				}
+				catch(NumberFormatException nfe)
+				{}
+			}
+		}
+	}
+
+	boolean overlayShown = false;
+	SoundEffectOverlay soundEffectOverlay;
+
+	private void showSoundEffectsOverlay()
+	{
+		if(soundEffectOverlay == null)
+		{
+			soundEffectOverlay = new SoundEffectOverlay(client, musicConfig);
+		}
+
+		if(musicConfig.listSoundEffects() && !overlayShown)
+		{
+			overlayManager.add(soundEffectOverlay);
+			overlayShown = true;
+		}
+
+		if(!musicConfig.listSoundEffects() && overlayShown)
+		{
+			overlayManager.remove(soundEffectOverlay);
+			overlayShown = false;
 		}
 	}
 }
