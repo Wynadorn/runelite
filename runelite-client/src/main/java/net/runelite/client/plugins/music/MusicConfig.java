@@ -52,7 +52,7 @@ public interface MusicConfig extends Config
 	{
 		return false;
 	}
-
+/*test*/
 	@ConfigItem(
 		keyName = "muteOtherAreaNPCSounds",
 		name = "Mute NPCs' area sounds",
