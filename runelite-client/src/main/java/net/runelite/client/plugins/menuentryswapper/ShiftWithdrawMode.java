@@ -45,7 +45,6 @@ public enum ShiftWithdrawMode
 	private final String name;
 	private final MenuAction menuAction;
 	private final int identifier;
-
 	private final int identifierChambersStorageUnit;
 	private final int identifierSeedVault;
 
