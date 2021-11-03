@@ -83,6 +83,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.chatbox.ChatboxItemSearch;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
+import net.runelite.client.plugins.bank.BankSearch;
 import net.runelite.client.plugins.banktags.BankTagsConfig;
 import net.runelite.client.plugins.banktags.BankTagsPlugin;
 import static net.runelite.client.plugins.banktags.BankTagsPlugin.TAG_SEARCH;
@@ -251,6 +252,13 @@ public class TabInterface
 		equipmentButton.setOriginalY(4);
 		equipmentButton.revalidate();
 
+		Widget bankItemCountTop = client.getWidget(WidgetInfo.BANK_ITEM_COUNT_TOP);
+		if (bankItemCountTop == null)
+		{
+			return;
+		}
+
+		int equipmentButtonTotalWidth = equipmentButton.getWidth() + equipmentButton.getOriginalX() - bankItemCountTop.getOriginalX();
 		// the bank item count is 3 widgets
 		for (int child = WidgetInfo.BANK_ITEM_COUNT_TOP.getChildId(); child <= WidgetInfo.BANK_ITEM_COUNT_BOTTOM.getChildId(); child++)
 		{
@@ -260,13 +268,22 @@ public class TabInterface
 				return;
 			}
 
-			widget.setOriginalX(widget.getOriginalX() + equipmentButton.getWidth());
+			widget.setOriginalX(widget.getOriginalX() + equipmentButtonTotalWidth);
 			widget.revalidate();
 		}
 
 		titleBar.setOriginalX(equipmentButton.getWidth() / 2);
 		titleBar.setOriginalWidth(titleBar.getWidth() - equipmentButton.getWidth());
 		titleBar.revalidate();
+
+		Widget groupStorageButton = client.getWidget(WidgetInfo.BANK_GROUP_STORAGE_BUTTON);
+		if (groupStorageButton == null)
+		{
+			return;
+		}
+
+		groupStorageButton.setOriginalX(groupStorageButton.getOriginalX() + equipmentButtonTotalWidth);
+		groupStorageButton.revalidate();
 	}
 
 	private void handleDeposit(MenuOptionClicked event, Boolean inventory)
@@ -346,7 +363,7 @@ public class TabInterface
 
 					final Iterator<String> dataIter = Text.fromCSV(dataString).iterator();
 					String name = dataIter.next();
-					StringBuffer sb = new StringBuffer();
+					StringBuilder sb = new StringBuilder();
 					for (char c : name.toCharArray())
 					{
 						if (FILTERED_CHARS.test(c))
@@ -368,7 +385,7 @@ public class TabInterface
 
 					while (dataIter.hasNext())
 					{
-						final int itemId = Integer.valueOf(dataIter.next());
+						final int itemId = Integer.parseInt(dataIter.next());
 						tagManager.addTag(itemId, name, itemId < 0);
 					}
 
@@ -446,7 +463,7 @@ public class TabInterface
 						})
 					)
 					.option("2. Only tab", () -> clientThread.invoke(() -> deleteTab(target)))
-					.option("3. Cancel", Runnables::doNothing)
+					.option("3. Cancel", Runnables.doNothing())
 					.build();
 				break;
 			case Tab.EXPORT_TAB:
@@ -655,43 +672,45 @@ public class TabInterface
 		}
 
 		if (activeTab != null
-			&& event.getMenuOption().equals("Search")
-			&& client.getWidget(WidgetInfo.BANK_SEARCH_BUTTON_BACKGROUND).getSpriteId() != SpriteID.EQUIPMENT_SLOT_SELECTED)
+			&& (event.getMenuOption().startsWith("View tab") || event.getMenuOption().equals("View all items")))
+		{
+			activateTab(null);
+		}
+		else if (activeTab != null
+			&& event.getParam1() == WidgetInfo.BANK_ITEM_CONTAINER.getId()
+			&& event.getMenuAction() == MenuAction.RUNELITE
+			&& event.getMenuOption().startsWith(REMOVE_TAG))
+		{
+			// Add "remove" menu entry to all items in bank while tab is selected
+			event.consume();
+			final ItemComposition item = getItem(event.getParam0());
+			final int itemId = item.getId();
+			tagManager.removeTag(itemId, activeTab.getTag());
+			bankSearch.layoutBank(); // re-layout to filter the removed item out
+		}
+		else if (event.getMenuAction() == MenuAction.RUNELITE
+			&& ((event.getParam1() == WidgetInfo.BANK_DEPOSIT_INVENTORY.getId() && event.getMenuOption().equals(TAG_INVENTORY))
+			|| (event.getParam1() == WidgetInfo.BANK_DEPOSIT_EQUIPMENT.getId() && event.getMenuOption().equals(TAG_GEAR))))
+		{
+			handleDeposit(event, event.getParam1() == WidgetInfo.BANK_DEPOSIT_INVENTORY.getId());
+		}
+		else if (activeTab != null && ((event.getParam1() == WidgetInfo.BANK_EQUIPMENT_BUTTON.getId() && event.getMenuOption().equals(SHOW_WORN))
+			|| (event.getParam1() == WidgetInfo.BANK_SETTINGS_BUTTON.getId() && event.getMenuOption().equals(SHOW_SETTINGS))
+			|| (event.getParam1() == WidgetInfo.BANK_TUTORIAL_BUTTON.getId() && event.getMenuOption().equals(SHOW_TUTORIAL))))
+		{
+			saveTab();
+		}
+	}
+
+	public void handleSearch()
+	{
+		if (activeTab != null)
 		{
 			activateTab(null);
 			// This ensures that when clicking Search when tab is selected, the search input is opened rather
 			// than client trying to close it first
 			client.setVar(VarClientStr.INPUT_TEXT, "");
 			client.setVar(VarClientInt.INPUT_TYPE, 0);
-		}
-		else if (activeTab != null
-			&& (event.getMenuOption().startsWith("View tab") || event.getMenuOption().equals("View all items")))
-		{
-			activateTab(null);
-		}
-		else if (activeTab != null
-			&& event.getWidgetId() == WidgetInfo.BANK_ITEM_CONTAINER.getId()
-			&& event.getMenuAction() == MenuAction.RUNELITE
-			&& event.getMenuOption().startsWith(REMOVE_TAG))
-		{
-			// Add "remove" menu entry to all items in bank while tab is selected
-			event.consume();
-			final ItemComposition item = getItem(event.getActionParam());
-			final int itemId = item.getId();
-			tagManager.removeTag(itemId, activeTab.getTag());
-			bankSearch.layoutBank(); // re-layout to filter the removed item out
-		}
-		else if (event.getMenuAction() == MenuAction.RUNELITE
-			&& ((event.getWidgetId() == WidgetInfo.BANK_DEPOSIT_INVENTORY.getId() && event.getMenuOption().equals(TAG_INVENTORY))
-			|| (event.getWidgetId() == WidgetInfo.BANK_DEPOSIT_EQUIPMENT.getId() && event.getMenuOption().equals(TAG_GEAR))))
-		{
-			handleDeposit(event, event.getWidgetId() == WidgetInfo.BANK_DEPOSIT_INVENTORY.getId());
-		}
-		else if (activeTab != null && ((event.getWidgetId() == WidgetInfo.BANK_EQUIPMENT_BUTTON.getId() && event.getMenuOption().equals(SHOW_WORN))
-			|| (event.getWidgetId() == WidgetInfo.BANK_SETTINGS_BUTTON.getId() && event.getMenuOption().equals(SHOW_SETTINGS))
-			|| (event.getWidgetId() == WidgetInfo.BANK_TUTORIAL_BUTTON.getId() && event.getMenuOption().equals(SHOW_TUTORIAL))))
-		{
-			saveTab();
 		}
 	}
 
@@ -1157,11 +1176,10 @@ public class TabInterface
 		t.revalidate();
 	}
 
-
 	private ItemComposition getItem(int idx)
 	{
 		ItemContainer bankContainer = client.getItemContainer(InventoryID.BANK);
-		Item item = bankContainer.getItems()[idx];
+		Item item = bankContainer.getItem(idx);
 		return itemManager.getItemComposition(item.getId());
 	}
 
