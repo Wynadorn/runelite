@@ -72,6 +72,7 @@ import static net.runelite.api.NullObjectID.NULL_20714;
 import static net.runelite.api.NullObjectID.NULL_20715;
 import net.runelite.api.Player;
 import net.runelite.api.SpriteID;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.api.WallObject;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.WallObjectChanged;
@@ -98,6 +99,7 @@ import net.runelite.client.ui.overlay.infobox.InfoBoxManager;
 import net.runelite.client.ui.overlay.infobox.InfoBoxPriority;
 import net.runelite.client.ui.overlay.infobox.LoopTimer;
 import net.runelite.client.util.QuantityFormatter;
+import org.apache.commons.lang3.ArrayUtils;
 
 @PluginDescriptor(
 	name = "Barrows Brothers",
@@ -114,6 +116,7 @@ public class BarrowsPlugin extends Plugin
 
 	private static final long PRAYER_DRAIN_INTERVAL_MS = 18200;
 	private static final int CRYPT_REGION_ID = 14231;
+	private static final int BARROWS_REGION_ID = 14131;
 
 	static final ImmutableSet<Integer> DOOR_IDS = ImmutableSet.of(
 		NULL_20681, NULL_20682, NULL_20683, NULL_20684, NULL_20685, NULL_20686, NULL_20687, NULL_20688,
@@ -269,6 +272,26 @@ public class BarrowsPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onBeforeRender(BeforeRender beforeRender)
+	{
+		// The barrows brothers and potential overlays have timers to unhide them each tick. Set them
+		// hidden here instead of in the overlay, because if the overlay renders on the ABOVE_WIDGETS
+		// layer due to being moved outside of the snap corner, it will be running after the overlays
+		// had already been rendered.
+		final Widget barrowsBrothers = client.getWidget(WidgetInfo.BARROWS_BROTHERS);
+		if (barrowsBrothers != null)
+		{
+			barrowsBrothers.setHidden(true);
+		}
+
+		final Widget potential = client.getWidget(WidgetInfo.BARROWS_POTENTIAL);
+		if (potential != null)
+		{
+			potential.setHidden(true);
+		}
+	}
+
+	@Subscribe
 	public void onWidgetClosed(WidgetClosed widgetClosed)
 	{
 		if (widgetClosed.getGroupId() == WidgetID.BARROWS_PUZZLE_GROUP_ID)
@@ -339,5 +362,10 @@ public class BarrowsPlugin extends Plugin
 	{
 		Player localPlayer = client.getLocalPlayer();
 		return localPlayer != null && localPlayer.getWorldLocation().getRegionID() == CRYPT_REGION_ID;
+	}
+
+	boolean isBarrowsLoaded()
+	{
+		return ArrayUtils.contains(client.getMapRegions(), BARROWS_REGION_ID);
 	}
 }

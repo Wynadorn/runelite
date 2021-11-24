@@ -364,6 +364,7 @@ public class MenuEntrySwapperPlugin extends Plugin
 		swap("wear", target -> !telepotItemExcludes.contains(target), "teleport", config::swapTeleportItem);
 		swap("wield", target -> !telepotItemExcludes.contains(target), "teleport", config::swapTeleportItem);
 		swap("wield", target -> !telepotItemExcludes.contains(target), "invoke", config::swapTeleportItem);
+		swap("wear", target -> !telepotItemExcludes.contains(target), "teleports", config::swapTeleportItem);
 
 		swap("wear", "farm teleport", () -> config.swapArdougneCloakMode() == ArdougneCloakMode.FARM);
 		swap("wear", "monastery teleport", () -> config.swapArdougneCloakMode() == ArdougneCloakMode.MONASTERY);
@@ -446,21 +447,20 @@ public class MenuEntrySwapperPlugin extends Plugin
 	{
 		if (event.getGroup().equals(MenuEntrySwapperConfig.GROUP))
 		{
-			switch (event.getKey())
+			if(event.getKey().equals("shiftClickCustomization"))
 			{
-				case "shiftClickCustomization":
-					if (config.shiftClickCustomization())
-					{
-						enableCustomization();
-					}
-					else
-					{
-						disableCustomization();
-					}
-					break;
-				case "teleportItemExcludes":
-					rebuildConfigCache();
-					break;
+				if (config.shiftClickCustomization())
+				{
+					enableCustomization();
+				}
+				else
+				{
+					disableCustomization();
+				}
+			}
+			else if(event.getKey().equals("teleportItemExcludes"))
+			{
+				rebuildConfigCache();
 			}
 		}
 		else if (event.getGroup().equals(SHIFTCLICK_CONFIG_GROUP) && event.getKey().startsWith(ITEM_KEY_PREFIX))
@@ -612,8 +612,8 @@ public class MenuEntrySwapperPlugin extends Plugin
 			&& (menuEntryAdded.getOption().startsWith("Deposit-") || menuEntryAdded.getOption().startsWith("Store") || menuEntryAdded.getOption().startsWith("Donate")))
 		{
 			ShiftDepositMode shiftDepositMode = config.bankDepositShiftClick();
-			final int opId = widgetGroupId == WidgetID.DEPOSIT_BOX_GROUP_ID ? shiftDepositMode.getIdentifierDepositBox()
-				: widgetGroupId == WidgetID.CHAMBERS_OF_XERIC_STORAGE_UNIT_INVENTORY_GROUP_ID ? shiftDepositMode.getIdentifierChambersStorageUnit()
+			final int opId = isDepositBoxPlayerInventory ? shiftDepositMode.getIdentifierDepositBox()
+				: isChambersOfXericStorageUnitPlayerInventory ? shiftDepositMode.getIdentifierChambersStorageUnit()
 				: widgetGroupId == WidgetID.SEED_VAULT_INVENTORY_GROUP_ID ? shiftDepositMode.getIdentifierSeedVault()
 				: shiftDepositMode.getIdentifier();
 			final int actionId = opId >= 6 ? MenuAction.CC_OP_LOW_PRIORITY.getId() : MenuAction.CC_OP.getId();
