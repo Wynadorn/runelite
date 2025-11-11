@@ -233,7 +233,7 @@ public class OverlayRenderer extends MouseAdapter
 				customSnapDirty = true;
 			}
 
-			// Rebuild custom snap areas if config changed
+			// Rebuild custom snap areas if config changed or bounds invalidated
 			if (customSnapDirty)
 			{
 				customSnapAreas = CustomSnapAreaParser.parse(
@@ -244,6 +244,9 @@ public class OverlayRenderer extends MouseAdapter
 					chatboxHidden,
 					client.getRealDimensions());
 				customSnapDirty = false;
+				
+				// Re-snap overlays after custom snap areas have been rebuilt
+				refreshCustomSnapAreaAttachments();
 			}
 
 			// Create copy of snap corners because overlays will modify them
@@ -257,6 +260,44 @@ public class OverlayRenderer extends MouseAdapter
 		if (event.getGroup().equals(RuneLiteConfig.GROUP_NAME) && event.getKey().equals("customSnapAreas"))
 		{
 			customSnapDirty = true;
+		}
+	}
+
+	/**
+	 * Re-snap overlays that are attached to custom snap areas, updating their positions
+	 * when bounds change (e.g., window resize).
+	 */
+	private void refreshCustomSnapAreaAttachments()
+	{
+		for (Overlay overlay : overlayManager.getLayer(OverlayLayer.UNDER_WIDGETS))
+		{
+			String snapAreaId = overlay.getCustomSnapAreaId();
+			if (snapAreaId == null || overlay.getPreferredLocation() == null)
+			{
+				continue;
+			}
+
+			// Find the custom snap area with this ID
+			CustomSnapArea matchingArea = null;
+			for (CustomSnapArea area : customSnapAreas)
+			{
+				if (area.getId().equals(snapAreaId))
+				{
+					matchingArea = area;
+					break;
+				}
+			}
+
+			if (matchingArea != null)
+			{
+				// Re-snap the overlay to the updated position using the snap area's computed bounds
+				// The bounds have already been recalculated by CustomSnapAreaParser with current viewport
+				final Rectangle overlayBounds = overlay.getBounds();
+				Point location = clampOverlayLocation(matchingArea.getBounds().x, matchingArea.getBounds().y,
+					overlayBounds.width, overlayBounds.height, overlay);
+				overlay.setPreferredLocation(location);
+				overlayManager.saveOverlay(overlay);
+			}
 		}
 	}
 
@@ -702,6 +743,7 @@ public class OverlayRenderer extends MouseAdapter
 					Point location = clampOverlayLocation(area.getBounds().x, area.getBounds().y,
 						overlayBounds.width, overlayBounds.height, currentManagedOverlay);
 					currentManagedOverlay.setPreferredLocation(location);
+					currentManagedOverlay.setCustomSnapAreaId(area.getId());
 					currentManagedOverlay.revalidate();
 					overlayManager.saveOverlay(currentManagedOverlay);
 					resetOverlayManagementMode();
@@ -730,6 +772,7 @@ public class OverlayRenderer extends MouseAdapter
 
 					currentManagedOverlay.setPreferredPosition(position);
 					currentManagedOverlay.setPreferredLocation(null); // from dragging
+					currentManagedOverlay.setCustomSnapAreaId(null);
 					currentManagedOverlay.revalidate();
 					break;
 				}

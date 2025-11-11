@@ -58,6 +58,7 @@ public abstract class Overlay implements LayoutableRenderableEntity
 	private Point preferredLocation;
 	private Dimension preferredSize;
 	private OverlayPosition preferredPosition;
+	private String customSnapAreaId;
 	private Rectangle bounds = new Rectangle();
 	private OverlayPosition position = OverlayPosition.TOP_LEFT;
 	/**
