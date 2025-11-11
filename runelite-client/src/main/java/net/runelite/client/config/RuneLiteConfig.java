@@ -479,4 +479,17 @@ public interface RuneLiteConfig extends Config
 	{
 		return Keybind.ALT;
 	}
+
+	@ConfigItem(
+		keyName = "customSnapAreas",
+		name = "Custom snap areas",
+		description = "Define custom snap areas for overlay positioning. Format: id|origin|x|y (one per line). " +
+			"Origins: VIEWPORT_TOP_LEFT, VIEWPORT_TOP_RIGHT, VIEWPORT_BOTTOM_LEFT, VIEWPORT_BOTTOM_RIGHT, VIEWPORT_CENTER, CANVAS_TOP_LEFT, CANVAS_TOP_RIGHT, CHATBOX_RIGHT",
+		position = 53,
+		section = overlaySettings
+	)
+	default String customSnapAreas()
+	{
+		return "";
+	}
 }

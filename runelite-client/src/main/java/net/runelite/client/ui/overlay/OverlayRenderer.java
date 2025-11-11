@@ -38,6 +38,7 @@ import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.event.MouseEvent;
 import java.awt.geom.AffineTransform;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -61,6 +62,7 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.OverlayMenuClicked;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseAdapter;
@@ -84,6 +86,8 @@ public class OverlayRenderer extends MouseAdapter
 	private static final Dimension SNAP_CORNER_SIZE = new Dimension(80, 80);
 	private static final Color SNAP_CORNER_COLOR = new Color(0, 255, 255, 50);
 	private static final Color SNAP_CORNER_ACTIVE_COLOR = new Color(0, 255, 0, 100);
+	private static final Color CUSTOM_SNAP_COLOR = new Color(0, 128, 255, 50);
+	private static final Color CUSTOM_SNAP_ACTIVE_COLOR = new Color(0, 128, 255, 100);
 	private static final Color MOVING_OVERLAY_COLOR = new Color(255, 255, 0, 100);
 	private static final Color MOVING_OVERLAY_ACTIVE_COLOR = new Color(255, 255, 0, 200);
 	private static final Color MOVING_OVERLAY_TARGET_COLOR = Color.RED;
@@ -116,6 +120,10 @@ public class OverlayRenderer extends MouseAdapter
 	private boolean isResizeable;
 	private OverlayBounds emptySnapCorners, snapCorners;
 	private boolean dragWarn;
+
+	// Custom snap areas
+	private List<CustomSnapArea> customSnapAreas = new ArrayList<>();
+	private boolean customSnapDirty = false;
 
 	@Inject
 	private OverlayRenderer(
@@ -222,10 +230,33 @@ public class OverlayRenderer extends MouseAdapter
 			if (shouldInvalidateBounds())
 			{
 				emptySnapCorners = buildSnapCorners();
+				customSnapDirty = true;
+			}
+
+			// Rebuild custom snap areas if config changed
+			if (customSnapDirty)
+			{
+				customSnapAreas = CustomSnapAreaParser.parse(
+					runeLiteConfig.customSnapAreas(),
+					viewportBounds,
+					chatboxBounds,
+					isResizeable,
+					chatboxHidden,
+					client.getRealDimensions());
+				customSnapDirty = false;
 			}
 
 			// Create copy of snap corners because overlays will modify them
 			snapCorners = new OverlayBounds(emptySnapCorners);
+		}
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (event.getGroup().equals(RuneLiteConfig.GROUP_NAME) && event.getKey().equals("customSnapAreas"))
+		{
+			customSnapDirty = true;
 		}
 	}
 
@@ -275,6 +306,13 @@ public class OverlayRenderer extends MouseAdapter
 			{
 				graphics.setColor(corner.contains(mousePosition) ? SNAP_CORNER_ACTIVE_COLOR : SNAP_CORNER_COLOR);
 				graphics.fill(corner);
+			}
+
+			// Draw custom snap areas
+			for (final CustomSnapArea area : customSnapAreas)
+			{
+				graphics.setColor(area.getBounds().contains(mousePosition) ? CUSTOM_SNAP_ACTIVE_COLOR : CUSTOM_SNAP_COLOR);
+				graphics.fill(area.getBounds());
 			}
 
 			graphics.setColor(previous);
@@ -648,6 +686,28 @@ public class OverlayRenderer extends MouseAdapter
 				mouseEvent.consume();
 				resetOverlayManagementMode();
 				return mouseEvent;
+			}
+		}
+
+		// Check if the overlay is over a custom snap area first (custom areas have priority)
+		if (currentManagedOverlay.isSnappable() && inOverlayDraggingMode)
+		{
+			for (CustomSnapArea area : customSnapAreas)
+			{
+				if (area.getBounds().contains(mousePoint))
+				{
+					// Snap to custom area using preferredLocation
+					currentManagedOverlay.setPreferredPosition(null);
+					final Rectangle overlayBounds = currentManagedOverlay.getBounds();
+					Point location = clampOverlayLocation(area.getBounds().x, area.getBounds().y,
+						overlayBounds.width, overlayBounds.height, currentManagedOverlay);
+					currentManagedOverlay.setPreferredLocation(location);
+					currentManagedOverlay.revalidate();
+					overlayManager.saveOverlay(currentManagedOverlay);
+					resetOverlayManagementMode();
+					mouseEvent.consume();
+					return mouseEvent;
+				}
 			}
 		}
 
