@@ -269,34 +269,44 @@ public class OverlayRenderer extends MouseAdapter
 	 */
 	private void refreshCustomSnapAreaAttachments()
 	{
-		for (Overlay overlay : overlayManager.getLayer(OverlayLayer.UNDER_WIDGETS))
+		// Check all overlays in all layers for custom snap area attachments
+		for (OverlayLayer layer : OverlayLayer.values())
 		{
-			String snapAreaId = overlay.getCustomSnapAreaId();
-			if (snapAreaId == null || overlay.getPreferredLocation() == null)
+			Collection<Overlay> overlays = overlayManager.getLayer(layer);
+			if (overlays == null || overlays.isEmpty())
 			{
 				continue;
 			}
 
-			// Find the custom snap area with this ID
-			CustomSnapArea matchingArea = null;
-			for (CustomSnapArea area : customSnapAreas)
+			for (Overlay overlay : overlays)
 			{
-				if (area.getId().equals(snapAreaId))
+				String snapAreaId = overlay.getCustomSnapAreaId();
+				if (snapAreaId == null || overlay.getPreferredLocation() == null)
 				{
-					matchingArea = area;
-					break;
+					continue;
 				}
-			}
 
-			if (matchingArea != null)
-			{
-				// Re-snap the overlay to the updated position using the snap area's computed bounds
-				// The bounds have already been recalculated by CustomSnapAreaParser with current viewport
-				final Rectangle overlayBounds = overlay.getBounds();
-				Point location = clampOverlayLocation(matchingArea.getBounds().x, matchingArea.getBounds().y,
-					overlayBounds.width, overlayBounds.height, overlay);
-				overlay.setPreferredLocation(location);
-				overlayManager.saveOverlay(overlay);
+				// Find the custom snap area with this ID
+				CustomSnapArea matchingArea = null;
+				for (CustomSnapArea area : customSnapAreas)
+				{
+					if (area.getId().equals(snapAreaId))
+					{
+						matchingArea = area;
+						break;
+					}
+				}
+
+				if (matchingArea != null)
+				{
+					// Re-snap the overlay to the updated position using the snap area's computed bounds
+					// The bounds have already been recalculated by CustomSnapAreaParser with current viewport
+					final Rectangle overlayBounds = overlay.getBounds();
+					Point location = clampOverlayLocation(matchingArea.getBounds().x, matchingArea.getBounds().y,
+						overlayBounds.width, overlayBounds.height, overlay);
+					overlay.setPreferredLocation(location);
+					overlayManager.saveOverlay(overlay);
+				}
 			}
 		}
 	}
@@ -777,6 +787,15 @@ public class OverlayRenderer extends MouseAdapter
 					break;
 				}
 			}
+		}
+
+		// If the overlay was dragged but not snapped to anything, clear the custom snap area ID
+		// so it doesn't get re-snapped when bounds change
+		if (inOverlayDraggingMode && currentManagedOverlay.getCustomSnapAreaId() != null 
+			&& currentManagedOverlay.getPreferredLocation() != null)
+		{
+			// The overlay was snapped to a custom area but has been dragged to a new free position
+			currentManagedOverlay.setCustomSnapAreaId(null);
 		}
 
 		if (inOverlayDraggingMode && currentManagedOverlay instanceof WidgetOverlay && !dragWarn)
