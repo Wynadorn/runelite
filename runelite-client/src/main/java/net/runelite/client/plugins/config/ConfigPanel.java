@@ -368,7 +368,21 @@ class ConfigPanel extends PluginPanel
 			}
 			else if (cid.getType() == String.class)
 			{
-				item.add(createTextField(cd, cid), BorderLayout.SOUTH);
+				JTextComponent textComponent = createTextField(cd, cid);
+				// Wrap JTextArea in a scroll pane for better multiline editing
+				if (textComponent instanceof JTextArea)
+				{
+					JScrollPane scrollPane = new JScrollPane(textComponent,
+						ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+						ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+					scrollPane.setPreferredSize(new Dimension(0, 100));
+					item.add(scrollPane, BorderLayout.SOUTH);
+				}
+				else
+				{
+					// For password fields, add directly
+					item.add(textComponent, BorderLayout.SOUTH);
+				}
 			}
 			else if (cid.getType() == Color.class)
 			{
@@ -518,6 +532,8 @@ class ConfigPanel extends PluginPanel
 			final JTextArea textArea = new JTextArea();
 			textArea.setLineWrap(true);
 			textArea.setWrapStyleWord(true);
+			textArea.setRows(4); // Set default height for multiline textarea
+			textArea.setColumns(25); // Set default width
 			textField = textArea;
 		}
 
