@@ -30,6 +30,7 @@ import java.util.Comparator;
 import java.util.Map;
 import lombok.Builder;
 import lombok.Value;
+import lombok.experimental.NonFinal;
 
 /**
  * UI navigation button.
@@ -38,9 +39,6 @@ import lombok.Value;
 @Builder
 public class NavigationButton
 {
-	static final Comparator<NavigationButton> COMPARATOR = Comparator.comparing(NavigationButton::getPriority)
-		.thenComparing(NavigationButton::getTooltip);
-
 	/**
 	 * Icon of button.
 	 */
@@ -66,9 +64,20 @@ public class NavigationButton
 	 * The order in which the button should be displayed in the side bar. (from lower to higher)
 	 */
 	private final int priority;
+	
+	@NonFinal
+	int userPriority;
+	
+	@NonFinal
+	public boolean userHidden = false;
 
 	/**
 	 * Map of key-value pairs for setting the popup menu
 	 */
 	private final Map<String, Runnable> popup;
+	
+	public void CalculateUserPriotity(int defaultPriority) {
+		if(userPriority == 0)
+			userPriority = defaultPriority;
+	}
 }

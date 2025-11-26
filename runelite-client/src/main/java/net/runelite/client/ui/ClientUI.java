@@ -118,6 +118,7 @@ import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
+import net.runelite.client.ui.components.SortableButton;
 import net.runelite.client.ui.laf.RuneLiteLAF;
 import net.runelite.client.ui.laf.RuneLiteRootPaneUI;
 import net.runelite.client.util.HotkeyListener;
@@ -155,7 +156,7 @@ public class ClientUI
 	private BufferedImage sidebarCloseIcon;
 
 	private JTabbedPane sidebar;
-	private final TreeSet<NavigationButton> sidebarEntries = new TreeSet<>(NavigationButton.COMPARATOR);
+	private final TreeSet<SortableButton> sidebarEntries = new TreeSet<>(SortableButton.COMPARATOR);
 	private final Deque<HistoryEntry> selectedTabHistory = new ArrayDeque<>();
 	private NavigationButton selectedTab;
 
@@ -236,7 +237,7 @@ public class ClientUI
 			toolbarPanel.add(navBtn, true);
 			return;
 		}
-
+		
 		if (!sidebarEntries.add(navBtn))
 		{
 			return;

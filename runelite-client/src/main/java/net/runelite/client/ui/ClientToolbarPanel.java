@@ -27,6 +27,7 @@ package net.runelite.client.ui;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.event.MouseEvent;
 import java.util.TreeMap;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
@@ -34,6 +35,9 @@ import javax.swing.JButton;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.event.MouseInputListener;
+
+import net.runelite.client.ui.components.SortableButton;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.SwingUtil;
 
@@ -42,7 +46,7 @@ import net.runelite.client.util.SwingUtil;
  */
 class ClientToolbarPanel extends JPanel
 {
-	private final TreeMap<NavigationButton, Component> entries = new TreeMap<>(NavigationButton.COMPARATOR);
+	private final TreeMap<SortableButton, NavigationButton> entries = new TreeMap<>(SortableButton.COMPARATOR);
 
 	ClientToolbarPanel(boolean isInSidebar)
 	{
@@ -59,43 +63,16 @@ class ClientToolbarPanel extends JPanel
 
 		revalidate();
 	}
-
-	JButton add(NavigationButton nb, boolean resize)
+	
+	SortableButton add(NavigationButton nb, boolean resize)
 	{
-		Icon icon = new ImageIcon(resize ? ImageUtil.resizeImage(nb.getIcon(), 16, 16) : nb.getIcon());
-		JButton jb = new JButton(icon);
-		SwingUtil.removeButtonDecorations(jb);
-		jb.setToolTipText(nb.getTooltip());
-		jb.setFocusable(false);
-		jb.setPreferredSize(new Dimension(23, 23));
-		jb.setAlignmentX(.5f);
-		jb.setAlignmentY(.5f);
-
-		jb.addActionListener(l ->
-		{
-			if (nb.getOnClick() != null)
-			{
-				nb.getOnClick().run();
-			}
-		});
-
-		if (nb.getPopup() != null)
-		{
-			var menu = new JPopupMenu();
-			nb.getPopup().forEach((name, cb) ->
-			{
-				var menuItem = new JMenuItem(name);
-				menuItem.addActionListener(e -> cb.run());
-				menu.add(menuItem);
-			});
-			jb.setComponentPopupMenu(menu);
-		}
-
-		if (entries.putIfAbsent(nb, jb) != null)
+		SortableButton jb = new SortableButton(nb, resize);
+		
+		if (entries.putIfAbsent(jb, nb) != null)
 		{
 			return null;
 		}
-		add(jb, entries.headMap(nb).size());
+		add(jb, entries.headMap(jb).size());
 		revalidate();
 		revalidateMaxSize();
 		return jb;
