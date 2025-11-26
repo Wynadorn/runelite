@@ -33,7 +33,7 @@ import javax.swing.JToggleButton;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.SwingUtil;
 
-class PluginToggleButton extends JToggleButton
+public class PluginToggleButton extends JToggleButton
 {
 	private static final ImageIcon ON_SWITCHER;
 	private static final ImageIcon OFF_SWITCHER;

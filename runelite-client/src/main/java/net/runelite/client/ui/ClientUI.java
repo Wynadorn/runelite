@@ -28,7 +28,6 @@ import com.formdev.flatlaf.FlatClientProperties;
 import com.formdev.flatlaf.ui.FlatNativeWindowBorder;
 import com.formdev.flatlaf.util.SystemInfo;
 import com.google.common.base.Strings;
-import com.google.common.collect.Iterables;
 import com.google.inject.Inject;
 import java.awt.AWTException;
 import java.awt.Canvas;
@@ -67,7 +66,7 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
-import java.util.TreeSet;
+
 import java.util.function.Function;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -135,6 +134,7 @@ public class ClientUI
 	private static final String CONFIG_CLIENT_BOUNDS = "clientBounds";
 	private static final String CONFIG_CLIENT_MAXIMIZED = "clientMaximized";
 	private static final String CONFIG_CLIENT_SIDEBAR_CLOSED = "clientSidebarClosed";
+	private static final String CONFIG_NAV_ORDER = "nav.order";
 	public static final BufferedImage ICON_128 = ImageUtil.loadImageResource(ClientUI.class, "runelite_128.png");
 	public static final BufferedImage ICON_16 = ImageUtil.loadImageResource(ClientUI.class, "runelite_16.png");
 
@@ -155,7 +155,9 @@ public class ClientUI
 	private BufferedImage sidebarCloseIcon;
 
 	private JTabbedPane sidebar;
-	private final TreeSet<NavigationButton> sidebarEntries = new TreeSet<>(NavigationButton.COMPARATOR);
+	private final java.util.List<NavigationButton> sidebarEntries = new java.util.ArrayList<>();
+	// navigation buttons that are currently hidden via user preference
+	private final java.util.List<NavigationButton> hiddenSidebarEntries = new java.util.ArrayList<>();
 	private final Deque<HistoryEntry> selectedTabHistory = new ArrayDeque<>();
 	private NavigationButton selectedTab;
 
@@ -171,6 +173,12 @@ public class ClientUI
 
 	private String lastNormalBounds;
 	private final Timer normalBoundsTimer;
+
+	/**
+	 * User-defined ordering of navigation entries.
+	 * Stored as a JSON array string in ConfigManager under group `runelite` key `nav.order`.
+	 */
+	private java.util.List<String> userNavOrder = new java.util.ArrayList<>();
 
 	@Inject(optional = true)
 	@Named("minMemoryLimit")
@@ -214,6 +222,7 @@ public class ClientUI
 
 		normalBoundsTimer = new Timer(250, _ev -> setLastNormalBounds());
 		normalBoundsTimer.setRepeats(false);
+
 	}
 
 	@Subscribe
@@ -226,27 +235,98 @@ public class ClientUI
 			return;
 		}
 
+		if (event.getKey().equals(CONFIG_NAV_ORDER))
+		{
+			// Use onUserNavOrderSaved which preserves selection and sidebar visibility
+			onUserNavOrderSaved();
+			return;
+		}
+
 		SwingUtilities.invokeLater(() -> updateFrameConfig(event.getKey().equals("lockWindowSize")));
 	}
 
 	void addNavigation(NavigationButton navBtn)
 	{
+		String debugIdAdd = computeNavId(navBtn);
+		log.debug("addNavigation called: id='{}' tooltip='{}' instance={}", debugIdAdd, navBtn.getTooltip(), System.identityHashCode(navBtn));
+
 		if (navBtn.getPanel() == null)
 		{
 			toolbarPanel.add(navBtn, true);
 			return;
 		}
 
-		if (!sidebarEntries.add(navBtn))
+		final int TAB_SIZE = 16;
+		Icon icon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), TAB_SIZE, TAB_SIZE));
+
+		// snapshot of existing entries to avoid counting the new navBtn
+		java.util.List<NavigationButton> existing = new java.util.ArrayList<>(sidebarEntries);
+		if (existing.contains(navBtn))
 		{
 			return;
 		}
 
-		final int TAB_SIZE = 16;
-		Icon icon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), TAB_SIZE, TAB_SIZE));
+		// Determine insertion index: if user has a custom order, honor it when possible
+		int index = -1;
+		String id = computeNavId(navBtn);
+		if (id != null && userNavOrder.contains(id))
+		{
+			int beforeCount = 0;
+			for (String uid : userNavOrder)
+			{
+				if (uid.equals(id))
+				{
+					index = beforeCount;
+					break;
+				}
+				// count only those that are already present in existing
+				for (NavigationButton nb : existing)
+				{
+					String nid = computeNavId(nb);
+					if (nid != null && nid.equals(uid))
+					{
+						beforeCount++;
+						break;
+					}
+				}
+			}
+		}
+		if (index == -1)
+		{
+			// fallback: count how many existing items are less than navBtn by comparator
+			int c = 0;
+			for (NavigationButton nb : existing)
+			{
+				if (NavigationButton.COMPARATOR.compare(nb, navBtn) < 0)
+				{
+					c++;
+				}
+			}
+			index = c;
+		}
 
-		sidebar.insertTab(null, icon, navBtn.getPanel().getWrappedPanel(), navBtn.getTooltip(),
-			sidebarEntries.headSet(navBtn).size());
+		// bound index into current tab count to avoid IndexOutOfBounds
+		int tabCount = sidebar.getTabCount();
+		if (index < 0)
+		{
+			index = 0;
+		}
+		if (index > tabCount)
+		{
+			index = tabCount;
+		}
+
+		// add to sidebarEntries at the same index so change listeners see consistent state when inserting tab
+		if (index >= 0 && index <= sidebarEntries.size())
+		{
+			sidebarEntries.add(index, navBtn);
+		}
+		else
+		{
+			sidebarEntries.add(navBtn);
+		}
+
+		sidebar.insertTab(null, icon, navBtn.getPanel().getWrappedPanel(), navBtn.getTooltip(), index);
 		// insertTab changes the selected index when the first tab is inserted, avoid this
 		if (sidebar.getTabCount() == 1)
 		{
@@ -254,8 +334,227 @@ public class ClientUI
 		}
 	}
 
+	/**
+	 * Public accessor for UI panels to list all navigation buttons in their current registration order.
+	 */
+	public java.util.List<NavigationButton> getAllNavigationButtons()
+	{
+		java.util.List<NavigationButton> all = new java.util.ArrayList<>();
+		all.addAll(sidebarEntries);
+		all.addAll(hiddenSidebarEntries);
+		return all;
+	}
+
+	/**
+	 * Return a snapshot list of navigation buttons currently hidden by the user.
+	 */
+	public java.util.List<NavigationButton> getHiddenNavigationButtons()
+	{
+		return new java.util.ArrayList<>(hiddenSidebarEntries);
+	}
+
+	/**
+	 * Return whether the given navigation button is currently hidden.
+	 */
+	public boolean isNavigationHidden(final NavigationButton navBtn)
+	{
+		return hiddenSidebarEntries.contains(navBtn);
+	}
+
+	/**
+	 * Hide or un-hide a navigation button from the sidebar while keeping the registration available
+	 * so the NavOrder UI can list and restore it. This does not unregister the button from plugins.
+	 */
+	public void setNavigationHidden(final NavigationButton navBtn, final boolean hidden)
+	{
+		assert SwingUtilities.isEventDispatchThread() : "must be on EDT";
+
+		if (hidden)
+		{
+			if (sidebarEntries.contains(navBtn))
+			{
+				boolean closingOpenTab = !selectedTabHistory.isEmpty() && selectedTabHistory.getLast().navBtn == navBtn;
+				selectedTabHistory.removeIf(it -> it.navBtn == navBtn);
+				sidebar.remove(navBtn.getPanel().getWrappedPanel());
+				sidebarEntries.remove(navBtn);
+				hiddenSidebarEntries.add(navBtn);
+
+				if (closingOpenTab)
+				{
+					HistoryEntry entry = selectedTabHistory.isEmpty()
+						? new HistoryEntry(true, null)
+						: selectedTabHistory.removeLast();
+
+					openPanel(entry.navBtn, entry.sidebarOpen);
+				}
+			}
+		}
+		else
+		{
+			if (hiddenSidebarEntries.contains(navBtn))
+			{
+				hiddenSidebarEntries.remove(navBtn);
+				addNavigation(navBtn);
+			}
+		}
+	}
+
+	public NavigationButton findNavigationByTooltip(String tooltip)
+	{
+		for (NavigationButton nb : sidebarEntries)
+		{
+			if (tooltip.equals(nb.getTooltip()))
+			{
+				return nb;
+			}
+		}
+		return null;
+	}
+
+	public NavigationButton getSelectedNavigationButton()
+	{
+		return selectedTab;
+	}
+
+	public String computeNavIdPublic(NavigationButton nb)
+	{
+		return computeNavId(nb);
+	}
+
+	/**
+	 * Called after the user saves a new nav.order to re-load and reapply ordering.
+	 */
+	public void onUserNavOrderSaved()
+	{
+		loadUserNavOrder();
+		SwingUtilities.invokeLater(() ->
+		{
+			// preserve current selection and sidebar visibility so we can restore it after reordering
+			NavigationButton previouslySelected = selectedTab;
+			boolean sidebarWasVisible = sidebar.isVisible();
+
+			log.debug("onUserNavOrderSaved: previouslySelected tooltip='{}' id='{}' sidebarWasVisible={}",
+				previouslySelected == null ? null : previouslySelected.getTooltip(),
+				computeNavIdPublic(previouslySelected),
+				sidebarWasVisible);
+
+			// snapshot current buttons
+			java.util.List<NavigationButton> current = new java.util.ArrayList<>(sidebarEntries);
+
+			log.debug("Reordering navigation - before: {}", String.join(", ", current.stream().map(NavigationButton::getTooltip).collect(java.util.stream.Collectors.toList())));
+
+			// build id -> queue of buttons (to support duplicates)
+			java.util.Map<String, java.util.ArrayDeque<NavigationButton>> map = new java.util.HashMap<>();
+			for (NavigationButton nb : current)
+			{
+				String id = computeNavId(nb);
+				map.computeIfAbsent(id == null ? "" : id, k -> new java.util.ArrayDeque<>()).add(nb);
+			}
+
+			// build new order from userNavOrder
+			java.util.List<NavigationButton> ordered = new java.util.ArrayList<>();
+			for (String id : userNavOrder)
+			{
+				java.util.ArrayDeque<NavigationButton> q = map.get(id == null ? "" : id);
+				if (q != null && !q.isEmpty())
+				{
+					ordered.add(q.removeFirst());
+				}
+			}
+
+			// append any remaining buttons not specified by the user, sorted by comparator for deterministic order
+			java.util.List<NavigationButton> remaining = new java.util.ArrayList<>();
+			for (java.util.ArrayDeque<NavigationButton> q : map.values())
+			{
+				while (!q.isEmpty())
+				{
+					remaining.add(q.removeFirst());
+				}
+			}
+			remaining.sort(NavigationButton.COMPARATOR);
+			ordered.addAll(remaining);
+
+			log.debug("Reordering navigation - after: {}", String.join(", ", ordered.stream().map(NavigationButton::getTooltip).collect(java.util.stream.Collectors.toList())));
+
+			// reapply tabs in the desired order
+			sidebar.removeAll();
+			sidebarEntries.clear();
+			for (NavigationButton nb : ordered)
+			{
+				addNavigation(nb);
+			}
+
+			// restore previously selected panel and sidebar visibility
+			if (previouslySelected != null)
+			{
+				// if the same NavigationButton instance is present, re-open it
+				if (sidebarEntries.contains(previouslySelected))
+				{
+					log.debug("onUserNavOrderSaved: restoring previously selected nav button tooltip='{}' id='{}'",
+						previouslySelected.getTooltip(), computeNavIdPublic(previouslySelected));
+					openPanel(previouslySelected, sidebarWasVisible);
+				}
+				else
+				{
+					log.debug("onUserNavOrderSaved: previously selected nav button not present after reorder: tooltip='{}' id='{}'",
+						previouslySelected.getTooltip(), computeNavIdPublic(previouslySelected));
+				}
+			}
+		});
+	}
+
+	/**
+	 * Load user-defined navigation order from ConfigManager into memory.
+	 */
+	private void loadUserNavOrder()
+	{
+		userNavOrder.clear();
+		String json = configManager.getConfiguration(CONFIG_GROUP, CONFIG_NAV_ORDER, String.class);
+		if (json == null || json.isEmpty())
+		{
+			return;
+		}
+		try
+		{
+			java.util.List<String> list = new com.google.gson.Gson().fromJson(json, new com.google.gson.reflect.TypeToken<java.util.List<String>>(){}.getType());
+			if (list != null)
+			{
+				userNavOrder.addAll(list);
+			}
+		}
+		catch (Exception ex)
+		{
+			log.debug("Failed to parse nav.order config", ex);
+		}
+	}
+
+	private static String computeNavId(final NavigationButton navBtn)
+	{
+		if (navBtn == null)
+		{
+			return null;
+		}
+		// Prefer tooltip (more descriptive and usually unique), then panel class name.
+		String tip = navBtn.getTooltip();
+		if (tip != null && !tip.isEmpty())
+		{
+			return "tooltip:" + tip;
+		}
+
+		if (navBtn.getPanel() != null && navBtn.getPanel().getWrappedPanel() != null)
+		{
+			return "panel:" + navBtn.getPanel().getWrappedPanel().getClass().getName();
+		}
+
+		// final fallback: icon hash + priority to help disambiguation
+		int iconHash = navBtn.getIcon() != null ? java.util.Arrays.hashCode(navBtn.getIcon().getRGB(0, 0, 1, 1, null, 0, 1)) : 0;
+		return "fallback:" + iconHash + ":" + navBtn.getPriority();
+	}
+
 	void removeNavigation(NavigationButton navBtn)
 	{
+		String debugIdRem = computeNavId(navBtn);
+		log.debug("removeNavigation called: id='{}' tooltip='{}' instance={}", debugIdRem, navBtn.getTooltip(), System.identityHashCode(navBtn));
 		if (navBtn.getPanel() == null)
 		{
 			toolbarPanel.remove(navBtn);
@@ -416,8 +715,26 @@ public class ClientUI
 				}
 				else
 				{
-					// maybe just include a map component -> navbtn?
-					newSelectedTab = Iterables.get(sidebarEntries, index);
+					// Safely get the navigation button at index; guard against mismatched sizes
+					if (index >= 0 && index < sidebarEntries.size())
+					{
+						int i = 0;
+						NavigationButton found = null;
+						for (NavigationButton nb : sidebarEntries)
+						{
+							if (i == index)
+							{
+								found = nb;
+								break;
+							}
+							i++;
+						}
+						newSelectedTab = found;
+					}
+					else
+					{
+						newSelectedTab = null;
+					}
 				}
 
 				if (oldSelectedTab == newSelectedTab)
@@ -547,6 +864,8 @@ public class ClientUI
 				JMenuBar menuBar = new JMenuBar();
 				menuBar.add(Box.createGlue());
 				menuBar.add(toolbarPanel);
+
+				// Settings menu removed - Nav Order plugin provides the customize UI
 				frame.setJMenuBar(menuBar);
 
 				JRootPane rp = frame.getRootPane();
@@ -608,6 +927,9 @@ public class ClientUI
 
 			// Update config
 			updateFrameConfig(false);
+
+			// load persisted user navigation order once configManager is available
+			loadUserNavOrder();
 
 			// Close sidebar if the config closed state is set
 			if (configManager.getConfiguration(CONFIG_GROUP, CONFIG_CLIENT_SIDEBAR_CLOSED, Boolean.class) == Boolean.TRUE)
@@ -1053,7 +1375,11 @@ public class ClientUI
 			return;
 		}
 
-		int index = navBtn == null ? -1 : sidebarEntries.headSet(navBtn).size();
+		int index = -1;
+		if (navBtn != null && navBtn.getPanel() != null && navBtn.getPanel().getWrappedPanel() != null)
+		{
+			index = sidebar.indexOfComponent(navBtn.getPanel().getWrappedPanel());
+		}
 		sidebar.setSelectedIndex(index);
 
 		toggleSidebar(showSidebar, false);
@@ -1131,9 +1457,9 @@ public class ClientUI
 				}
 			}
 
-			if (open == null)
+			if (open == null && !sidebarEntries.isEmpty())
 			{
-				open = sidebarEntries.first();
+				open = sidebarEntries.get(0);
 			}
 
 			openPanel(open, true);
