@@ -59,7 +59,7 @@ public class CustomSnapAreaParserTest
 		assertEquals(1, areas.size());
 		CustomSnapArea area = areas.get(0);
 		assertEquals("top_left", area.getId());
-		assertEquals(SnapOrigin.VIEWPORT_TOP_LEFT, area.getOrigin());
+		assertEquals(OverlayPosition.VIEWPORT_TOP_LEFT, area.getPosition());
 		assertEquals(10, area.getX());
 		assertEquals(20, area.getY());
 		assertNotNull(area.getBounds());

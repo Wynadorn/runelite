@@ -30,8 +30,13 @@ import java.util.Collection;
 import lombok.AllArgsConstructor;
 import lombok.Value;
 import static net.runelite.client.ui.overlay.OverlayPosition.ABOVE_CHATBOX_RIGHT;
+import static net.runelite.client.ui.overlay.OverlayPosition.BOTTOM_CENTER;
 import static net.runelite.client.ui.overlay.OverlayPosition.BOTTOM_LEFT;
 import static net.runelite.client.ui.overlay.OverlayPosition.BOTTOM_RIGHT;
+import static net.runelite.client.ui.overlay.OverlayPosition.CANVAS_BOTTOM_CENTER;
+import static net.runelite.client.ui.overlay.OverlayPosition.CANVAS_BOTTOM_LEFT;
+import static net.runelite.client.ui.overlay.OverlayPosition.CANVAS_BOTTOM_RIGHT;
+import static net.runelite.client.ui.overlay.OverlayPosition.CANVAS_CENTER;
 import static net.runelite.client.ui.overlay.OverlayPosition.CANVAS_TOP_RIGHT;
 import static net.runelite.client.ui.overlay.OverlayPosition.TOP_CENTER;
 import static net.runelite.client.ui.overlay.OverlayPosition.TOP_LEFT;
@@ -41,7 +46,7 @@ import static net.runelite.client.ui.overlay.OverlayPosition.TOP_RIGHT;
 @Value
 class OverlayBounds
 {
-	private final Rectangle topLeft, topCenter, topRight, bottomLeft, bottomRight, aboveChatboxRight, canvasTopRight;
+	private final Rectangle topLeft, topCenter, topRight, bottomLeft, bottomCenter, bottomRight, aboveChatboxRight, canvasTopRight, canvasBottomLeft, canvasBottomCenter, canvasBottomRight, canvasCenter;
 
 	OverlayBounds(OverlayBounds other)
 	{
@@ -49,9 +54,14 @@ class OverlayBounds
 		topCenter = new Rectangle(other.topCenter);
 		topRight = new Rectangle(other.topRight);
 		bottomLeft = new Rectangle(other.bottomLeft);
+		bottomCenter = new Rectangle(other.bottomCenter);
 		bottomRight = new Rectangle(other.bottomRight);
 		aboveChatboxRight = new Rectangle(other.aboveChatboxRight);
 		canvasTopRight = new Rectangle(other.canvasTopRight);
+		canvasBottomLeft = new Rectangle(other.canvasBottomLeft);
+		canvasBottomCenter = new Rectangle(other.canvasBottomCenter);
+		canvasBottomRight = new Rectangle(other.canvasBottomRight);
+		canvasCenter = new Rectangle(other.canvasCenter);
 	}
 
 	OverlayBounds translated(final int x, final int y)
@@ -60,9 +70,14 @@ class OverlayBounds
 		translated.getTopRight().translate(x, 0);
 		translated.getTopCenter().translate(x / 2, 0);
 		translated.getBottomLeft().translate(0, y);
+		translated.getBottomCenter().translate(x / 2, y);
 		translated.getBottomRight().translate(x, y);
 		translated.getAboveChatboxRight().translate(x, y);
 		translated.getCanvasTopRight().translate(x, 0);
+		translated.getCanvasBottomLeft().translate(0, y);
+		translated.getCanvasBottomCenter().translate(x / 2, y);
+		translated.getCanvasBottomRight().translate(x, y);
+		translated.getCanvasCenter().translate(x / 2, y / 2);
 		return translated;
 	}
 
@@ -78,12 +93,22 @@ class OverlayBounds
 				return topRight;
 			case BOTTOM_LEFT:
 				return bottomLeft;
+			case BOTTOM_CENTER:
+				return bottomCenter;
 			case BOTTOM_RIGHT:
 				return bottomRight;
 			case ABOVE_CHATBOX_RIGHT:
 				return aboveChatboxRight;
 			case CANVAS_TOP_RIGHT:
 				return canvasTopRight;
+			case CANVAS_BOTTOM_LEFT:
+				return canvasBottomLeft;
+			case CANVAS_BOTTOM_CENTER:
+				return canvasBottomCenter;
+			case CANVAS_BOTTOM_RIGHT:
+				return canvasBottomRight;
+			case CANVAS_CENTER:
+				return canvasCenter;
 			default:
 				throw new IllegalArgumentException();
 		}
@@ -107,6 +132,10 @@ class OverlayBounds
 		{
 			return BOTTOM_LEFT;
 		}
+		else if (bounds == bottomCenter)
+		{
+			return BOTTOM_CENTER;
+		}
 		else if (bounds == bottomRight)
 		{
 			return BOTTOM_RIGHT;
@@ -119,6 +148,22 @@ class OverlayBounds
 		{
 			return CANVAS_TOP_RIGHT;
 		}
+		else if (bounds == canvasBottomLeft)
+		{
+			return CANVAS_BOTTOM_LEFT;
+		}
+		else if (bounds == canvasBottomCenter)
+		{
+			return CANVAS_BOTTOM_CENTER;
+		}
+		else if (bounds == canvasBottomRight)
+		{
+			return CANVAS_BOTTOM_RIGHT;
+		}
+		else if (bounds == canvasCenter)
+		{
+			return CANVAS_CENTER;
+		}
 		else
 		{
 			throw new IllegalArgumentException();
@@ -127,6 +172,6 @@ class OverlayBounds
 
 	Collection<Rectangle> getBounds()
 	{
-		return Arrays.asList(topLeft, topCenter, topRight, bottomLeft, bottomRight, aboveChatboxRight, canvasTopRight);
+		return Arrays.asList(topLeft, topCenter, topRight, bottomLeft, bottomCenter, bottomRight, aboveChatboxRight, canvasBottomLeft, canvasBottomCenter, canvasBottomRight, canvasCenter);
 	}
 }

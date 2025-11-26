@@ -81,12 +81,12 @@ public class CustomSnapAreaParser
 			try
 			{
 				String id = tokens[0].trim();
-				String originStr = tokens[1].trim();
+				String positionStr = tokens[1].trim();
 				int x = Integer.parseInt(tokens[2].trim());
 				int y = Integer.parseInt(tokens[3].trim());
 
-				SnapOrigin origin = SnapOrigin.valueOf(originStr);
-				Point basePoint = getOriginPoint(origin, viewportBounds, chatboxBounds, resizeable, chatboxHidden, realDimensions);
+				OverlayPosition position = OverlayPosition.valueOf(positionStr);
+				Point basePoint = getOriginPoint(position, viewportBounds, chatboxBounds, resizeable, chatboxHidden, realDimensions);
 
 				Rectangle bounds = new Rectangle(
 					basePoint.x + x,
@@ -94,7 +94,7 @@ public class CustomSnapAreaParser
 					SNAP_CORNER_SIZE.width,
 					SNAP_CORNER_SIZE.height);
 
-				areas.add(new CustomSnapArea(id, origin, x, y, bounds));
+				areas.add(new CustomSnapArea(id, position, x, y, bounds));
 			}
 			catch (IllegalArgumentException e)
 			{
@@ -110,52 +110,64 @@ public class CustomSnapAreaParser
 	}
 
 	/**
-	 * Gets the base point for a given origin.
+	 * Gets the base point for a given position.
 	 */
-	private static Point getOriginPoint(SnapOrigin origin, Rectangle viewportBounds,
+	private static Point getOriginPoint(OverlayPosition position, Rectangle viewportBounds,
 		Rectangle chatboxBounds, boolean resizeable, boolean chatboxHidden, Dimension realDimensions)
 	{
-		switch (origin)
+		switch (position)
 		{
-			case VIEWPORT_TOP_LEFT:
+			case TOP_LEFT:
 				return new Point(
 					viewportBounds.x + BORDER,
 					viewportBounds.y + BORDER_TOP);
 
-			case VIEWPORT_TOP_RIGHT:
+			case TOP_CENTER:
+				return new Point(
+					viewportBounds.x + viewportBounds.width / 2,
+					viewportBounds.y + BORDER_TOP);
+
+			case TOP_RIGHT:
 				return new Point(
 					viewportBounds.x + viewportBounds.width - BORDER,
 					viewportBounds.y + BORDER);
 
-			case VIEWPORT_BOTTOM_LEFT:
+			case BOTTOM_LEFT:
 				return new Point(
 					viewportBounds.x + BORDER,
 					viewportBounds.y + viewportBounds.height - BORDER);
 
-			case VIEWPORT_BOTTOM_RIGHT:
+			case BOTTOM_CENTER:
+				return new Point(
+					viewportBounds.x + viewportBounds.width / 2,
+					viewportBounds.y + viewportBounds.height - BORDER);
+
+			case BOTTOM_RIGHT:
 				return new Point(
 					viewportBounds.x + viewportBounds.width - BORDER,
 					viewportBounds.y + viewportBounds.height - BORDER);
 
-			case VIEWPORT_CENTER:
-				return new Point(
-					viewportBounds.x + viewportBounds.width / 2,
-					viewportBounds.y + viewportBounds.height / 2);
-
-			case CANVAS_TOP_LEFT:
-				return new Point(0, 0);
-
-			case CANVAS_TOP_RIGHT:
-				return new Point(
-					(int)realDimensions.getWidth(),
-					0);
-
-			case CHATBOX_RIGHT:
+			case ABOVE_CHATBOX_RIGHT:
 				return resizeable ? new Point(
 					viewportBounds.x + chatboxBounds.width - BORDER,
 					viewportBounds.y + viewportBounds.height - BORDER) : new Point(
 					viewportBounds.x + viewportBounds.width - BORDER,
 					viewportBounds.y + viewportBounds.height - BORDER);
+
+			case CANVAS_BOTTOM_LEFT:
+				return new Point(0, (int)realDimensions.getHeight());
+
+			case CANVAS_BOTTOM_CENTER:
+				return new Point((int)realDimensions.getWidth() / 2, (int)realDimensions.getHeight());
+
+			case CANVAS_BOTTOM_RIGHT:
+				return new Point((int)realDimensions.getWidth(), (int)realDimensions.getHeight());
+			
+			case CANVAS_TOP_RIGHT:
+				return new Point((int)realDimensions.getWidth(), 0);
+
+			case CANVAS_CENTER:
+				return new Point((int)realDimensions.getWidth() / 2, (int)realDimensions.getHeight() / 2);
 
 			default:
 				return new Point(0, 0);

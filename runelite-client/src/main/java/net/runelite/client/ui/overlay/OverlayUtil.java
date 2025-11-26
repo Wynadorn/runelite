@@ -214,14 +214,18 @@ public class OverlayUtil
 		switch (overlayPosition)
 		{
 			case BOTTOM_LEFT:
+			case CANVAS_BOTTOM_LEFT:
 				sX = Math.max(sX, bounds.x + bounds.width + padding);
 				break;
 			case BOTTOM_RIGHT:
+			case CANVAS_BOTTOM_RIGHT:
 				sX = Math.min(sX, bounds.x - padding);
 				break;
 			case TOP_LEFT:
 			case TOP_CENTER:
 			case CANVAS_TOP_RIGHT:
+			case CANVAS_BOTTOM_CENTER:
+			case CANVAS_CENTER:
 			case TOP_RIGHT:
 				sY = Math.max(sY, bounds.y + bounds.height + padding);
 				break;
@@ -242,15 +246,23 @@ public class OverlayUtil
 		switch (position)
 		{
 			case TOP_LEFT:
+			case CANVAS_BOTTOM_LEFT:
 				break;
 			case TOP_CENTER:
+			case CANVAS_BOTTOM_CENTER:
+			case CANVAS_CENTER:
 				result.x = -dimension.width / 2;
 				break;
 			case BOTTOM_LEFT:
 				result.y = -dimension.height;
 				break;
+			case BOTTOM_CENTER:
+				result.y = -dimension.height;
+				result.x = -dimension.width / 2;
+				break;
 			case BOTTOM_RIGHT:
 			case ABOVE_CHATBOX_RIGHT:
+			case CANVAS_BOTTOM_RIGHT:
 				result.y = -dimension.height;
 				// FALLTHROUGH
 			case CANVAS_TOP_RIGHT:

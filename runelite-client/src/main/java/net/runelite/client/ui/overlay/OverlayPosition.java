@@ -32,40 +32,40 @@ public enum OverlayPosition
 	 */
 	@Deprecated
 	DETACHED,
-	/**
-	 * Overlay places itself where it wants
-	 */
+	
+	// Overlay places itself where it wants
 	DYNAMIC,
-	/**
-	 * Place overlay in the top left viewport area
-	 */
+	
+	// Place overlay in the top left viewport area
 	TOP_LEFT,
-	/**
-	 * Place overlay in the top center viewport area
-	 */
+	// Place overlay in the top center viewport area
 	TOP_CENTER,
-	/**
-	 * Place overlay in the top right viewport area
-	 */
+	// Place overlay in the top right viewport area
 	TOP_RIGHT,
-	/**
-	 * Place overlay in the bottom left viewport area
-	 */
+
+	// Place overlay in the bottom left viewport area
 	BOTTOM_LEFT,
-	/**
-	 * Place overlay in the bottom right viewport area
-	 */
+	// Place overlay in the bottom center viewport area
+	BOTTOM_CENTER,
+	// Place overlay in the bottom right viewport area
 	BOTTOM_RIGHT,
-	/**
-	 * Place overlay directly above right side of chatbox
-	 */
+
+	// Place overlay directly above right side of chatbox
 	ABOVE_CHATBOX_RIGHT,
-	/**
-	 * Place overlay in the top right most area possible
-	 */
+
+	// Top-right corner of the canvas (full client window)
 	CANVAS_TOP_RIGHT,
-	/**
-	 * Tooltip overlay
-	 */
-	TOOLTIP
+
+	// Bottom-left corner of the viewport
+	CANVAS_BOTTOM_LEFT,
+	// Bottom-center corner of the viewport
+	CANVAS_BOTTOM_CENTER,
+	// Bottom-right corner of the viewport
+	CANVAS_BOTTOM_RIGHT,
+
+	// Center of the viewport
+	CANVAS_CENTER,
+	
+	// Tooltip overlay
+	TOOLTIP,
 }

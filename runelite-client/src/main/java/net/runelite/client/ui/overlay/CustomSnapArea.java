@@ -36,7 +36,7 @@ import lombok.Data;
 public class CustomSnapArea
 {
 	private final String id;
-	private final SnapOrigin origin;
+	private final OverlayPosition position;
 	private final int x;
 	private final int y;
 	private final Rectangle bounds;
