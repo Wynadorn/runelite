@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "mvn: build (skip tests)",
+      "type": "shell",
+      "command": "mvn -DskipTests -U clean install",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "mvn: compile client (fast)",
+      "type": "shell",
+      "command": "mvn -DskipTests -pl runelite-client -am compile",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "mvn: generate-sources",
+      "type": "shell",
+      "command": "mvn -DskipTests generate-sources",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "mvn: prepare dev (plugin+client)",
+      "type": "shell",
+      "command": "mvn -T 1C -DskipTests -pl runelite-maven-plugin -am process-classes; mvn -T 1C -DskipTests -pl runelite-client -am compile",
+      "group": "build",
+      "problemMatcher": []
+    }
+    ,
+    {
+      "label": "mvn: dev (single pass, JDK21)",
+      "type": "shell",
+      "command": "mvn -T 1C -DskipTests -pl runelite-maven-plugin,runelite-client -am process-classes compile",
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

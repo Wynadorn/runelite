@@ -36,6 +36,11 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.Enumeration;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.lang.reflect.Modifier;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -381,6 +386,16 @@ public class ExternalPluginManager
 				}
 			}
 
+			// Load development plugins from <runelite dir>/plugins/dev
+			try
+			{
+				loadDevPlugins(startup);
+			}
+			catch (Throwable e)
+			{
+				log.warn("Failed to load dev plugins", e);
+			}
+
 			if (!startup)
 			{
 				eventBus.post(new ExternalPluginsChanged());
@@ -455,6 +470,126 @@ public class ExternalPluginManager
 	{
 		PluginHubManifest.JarData jd = getJarData(plugin);
 		return jd == null ? null : jd.getInternalName();
+	}
+
+	/**
+	 * Load jars from <runelite dir>/plugins/dev for development.
+	 * This is intentionally small and permissive; it bypasses manifest/hash checks.
+	 */
+	private void loadDevPlugins(boolean startup)
+	{
+		File devDir = new File(RuneLite.PLUGINS_DIR, "dev");
+		if (!devDir.exists() || !devDir.isDirectory())
+		{
+			return;
+		}
+
+		File[] devJars = devDir.listFiles((d, name) -> name.toLowerCase().endsWith(".jar"));
+		if (devJars == null)
+		{
+			return;
+		}
+
+		for (File jar : devJars)
+		{
+			log.info("Loading dev plugin jar {}", jar);
+			try
+			{
+				URLClassLoader cl = new URLClassLoader(new URL[]{jar.toURI().toURL()}, this.getClass().getClassLoader());
+
+				List<Class<?>> clazzes = new ArrayList<>();
+				try (JarFile jf = new JarFile(jar))
+				{
+					Enumeration<JarEntry> entries = jf.entries();
+					while (entries.hasMoreElements())
+					{
+						JarEntry e = entries.nextElement();
+						if (e.isDirectory() || !e.getName().endsWith(".class"))
+						{
+							continue;
+						}
+						String className = e.getName().replace('/', '.').replace(".class", "");
+						try
+						{
+							Class<?> c = cl.loadClass(className);
+							if (Plugin.class.isAssignableFrom(c) && !Modifier.isAbstract(c.getModifiers()) && !c.isInterface())
+							{
+								clazzes.add(c);
+							}
+						}
+						catch (Throwable ignored)
+						{
+							// ignore load failures
+						}
+					}
+				}
+
+				if (clazzes.isEmpty())
+				{
+					continue;
+				}
+
+				List<Plugin> newPlugins = null;
+				try
+				{
+					// PluginManager API here expects the second parameter to be a loader/consumer used by
+					// the normal flow; pass null to use default behavior while keeping `cl` accessible.
+					List<Plugin> newPlugins2 = newPlugins = pluginManager.loadPlugins(clazzes, null);
+					if (!startup)
+					{
+						pluginManager.loadDefaultPluginConfiguration(newPlugins);
+
+						SwingUtilities.invokeAndWait(() ->
+						{
+							try
+							{
+								for (Plugin p : newPlugins2)
+								{
+									pluginManager.startPlugin(p);
+								}
+							}
+							catch (PluginInstantiationException e)
+							{
+								throw new RuntimeException(e);
+							}
+						});
+					}
+				}
+				catch (Throwable e)
+				{
+					log.warn("Unable to start or load dev plugin jar \"{}\"", jar, e);
+					if (newPlugins != null)
+					{
+						for (Plugin p : newPlugins)
+						{
+							try
+							{
+								SwingUtilities.invokeAndWait(() ->
+								{
+									try
+									{
+										pluginManager.stopPlugin(p);
+									}
+									catch (Exception e2)
+									{
+										throw new RuntimeException(e2);
+									}
+								});
+							}
+							catch (InterruptedException | InvocationTargetException e2)
+							{
+								log.info("Unable to fully stop plugin from dev jar \"{}\"", jar, e2);
+							}
+							pluginManager.remove(p);
+						}
+					}
+				}
+			}
+			catch (Throwable e)
+			{
+				log.warn("Failed to load dev plugin jar {}", jar, e);
+			}
+		}
 	}
 
 	public static void loadBuiltin(Class<? extends Plugin>... plugins)
