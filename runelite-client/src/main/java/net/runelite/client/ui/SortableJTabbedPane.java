@@ -1,20 +1,34 @@
 package net.runelite.client.ui;
 
-import com.formdev.flatlaf.FlatClientProperties;
-import java.awt.Color;
+import java.awt.AWTEvent;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
-import java.awt.Container;
 import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.IllegalComponentStateException;
+import java.awt.MouseInfo;
 import java.awt.Point;
+import java.awt.PointerInfo;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.Toolkit;
+import java.awt.Window;
+import java.awt.event.AWTEventListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.awt.image.BufferedImage;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -22,41 +36,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import javax.swing.BoxLayout;
-import javax.swing.JLayer;
-import javax.swing.JComponent;
-import javax.swing.plaf.LayerUI;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JDialog;
+import javax.swing.JLayer;
 import javax.swing.JPanel;
 import javax.swing.JSeparator;
-import javax.swing.JDialog;
 import javax.swing.SwingUtilities;
-import java.awt.Window;
-import java.awt.Component;
-import java.awt.IllegalComponentStateException;
-import java.awt.MouseInfo;
-import java.awt.PointerInfo;
-import java.awt.AWTEvent;
-import java.awt.Toolkit;
-import java.awt.image.BufferedImage;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.BasicStroke;
-import java.awt.event.AWTEventListener;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.plaf.LayerUI;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.formdev.flatlaf.FlatClientProperties;
 import lombok.Getter;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.util.ImageUtil;
-import net.runelite.client.util.SwingUtil;
 import net.runelite.client.plugins.loottracker.LootTrackerPlugin;
 import net.runelite.client.plugins.sortablebuttons.SortableButtonsConfig;
+import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.SwingUtil;
 
 /**
  * A replacement for the previous JTabbedPane-based sidebar which renders
@@ -65,405 +66,315 @@ import net.runelite.client.plugins.sortablebuttons.SortableButtonsConfig;
  */
 public class SortableJTabbedPane extends JPanel
 {
+	// Spacing / sizing
+	// ToDo: remove remaining magic values in the code and replace with constants
 	private static final int ICON_SIZE = 16;
+	private static final int MIN_PINNED_HEIGHT = 24;
 	private static final int DEFAULT_WIDTH = 274; // approximate previous sidebar panel width (reduced by 26px)
 	private static final int DRAG_THRESHOLD = 8; // pixels (euclidean)
+	
+	// Colors
+	// ToDo: verify the correct colors are being used
+	// ToDo: ensure no hardcoded colors are used unless defined here, see if there is a colorscheme constant we can use instead
+	private static final Color SELECTED_STRIPE_COLOR = new Color(0xFF7700);
+    static final Color BUTTON_BG = new Color(0x1e1e1e);
+	private static final Color HIGHLIGHT_HIDDEN_COLOR = new Color(0x444444);
+	private static final Color HIGHLIGHT_SORTED_COLOR = new Color(0x3A3A3A);
+	
+	// Parameter keys for config persistence
+	private final ConfigManager configManager;
 	private static final String CONFIG_GROUP = SortableButtonsConfig.GROUP;
 	private static final String CONFIG_PINNED = SortableButtonsConfig.PINNED_ORDER_KEY;
 	private static final String CONFIG_HIDDEN = SortableButtonsConfig.HIDDEN_BUTTONS_KEY;
-	private static final int MIN_PINNED_HEIGHT = 24;
 
+	// Logging / debug
+	// ToDo: implement logging consistent with other classes in the project
 	private static final boolean DEBUG = Boolean.getBoolean("runelite.debug.ui");
 	private static final Logger LOGGER = LoggerFactory.getLogger(SortableJTabbedPane.class);
-	private static final Color DEBUG_NAV_BG_BLUE = new Color(0x0000FF);
-	private static final Color DEBUG_PINNED_BG_GREEN = new Color(0x00FF00);
-	private static final Color DEBUG_SORTED_BG_ORANGE = new Color(0xFF7700);
-	private static final Color DEBUG_HIDDEN_BG_RED = new Color(0xFF0000);
-	private static final Color DEBUG_CARDS_BG_GREY = new Color(0x777);
-	private static final Color DEBUG_FOOTER_BG_CYAN = new Color(0x00FFFF);
-	private static final Color DEBUG_BUTTON_BG_YELLOW = new Color(0xFFFF00);
-	private static final Color SELECTED_STRIPE_COLOR = new Color(0xFF7700);
-	// Feature flags controlled by the Sortable Buttons plugin/config
+	
+	// Feature flags controlled by the Sortable Buttons plugin config
 	private boolean pinningEnabled = true;
 	private boolean hidingEnabled = true;
 
-    // Sidebar/button background color (consistent across panels)
-    private static final Color BUTTON_BG = new Color(0x1e1e1e);
-
-	// Panels
+	// Panel for the plugin content area
+    private final JPanel sidebarContentPanel = new JPanel();
+	
+	private final CardLayout cardLayout = new CardLayout();
+	private final JPanel footerHolder_DeleteMe = new JPanel();
+	
+	// Button Panels
 	private final JPanel navigationButtonsPanel = new JPanel();
-	private final JPanel pinnedButtonsPanel = new JPanel()
+	private final JPanel sortedPluginsPanel = new JPanel();
+	private final JPanel hiddenPluginsPanel = new JPanel();
+	private final JPanel pinnedPluginsPanel = new JPanel()
 	{
+		// ToDo: can't we just set the preferred size directly instead of overriding this?
 		@Override
 		public Dimension getPreferredSize()
 		{
+			// When pinning is disabled, collapse pinned area to zero height
 			if (!pinningEnabled)
 			{
 				return new Dimension(0, 0);
 			}
-			Dimension d = super.getPreferredSize();
-			// If there are no visible pinned buttons, reserve a small area so we can
-			// show a pin placeholder hint; when dragging we also want the minimum height.
-			int visiblePinned = 0;
-			for (NavigationButton nb : pinnedButtons)
+
+			Dimension size = super.getPreferredSize();
+			if (size == null)
 			{
-				if (!hiddenButtons.contains(nb))
-				{
-					visiblePinned++;
-				}
+				size = new Dimension(0, MIN_PINNED_HEIGHT);
 			}
-			if (visiblePinned == 0 && !isDragging)
+			else if (size.height < MIN_PINNED_HEIGHT)
 			{
-				if (d == null)
-				{
-					d = new Dimension(0, MIN_PINNED_HEIGHT);
-				}
-				d.height = MIN_PINNED_HEIGHT;
-				return d;
+				size.height = MIN_PINNED_HEIGHT;
 			}
-			if (d == null)
-			{
-				d = new Dimension(0, MIN_PINNED_HEIGHT);
-			}
-			if (d.height < MIN_PINNED_HEIGHT)
-			{
-				d.height = MIN_PINNED_HEIGHT;
-			}
-			return d;
+
+			return size;
 		}
 	};
-	private final JPanel sortedButtonsPanel = new JPanel();
-	private final JPanel hiddenButtonsPanel = new JPanel();
-
-	private final JPanel sidebarContentPanel = new JPanel();
-	private final CardLayout cardLayout = new CardLayout();
-	private final JPanel footerHolder_DeleteMe = new JPanel();
 
 	// Data structures
+	// ToDo: verify all of these are needed, some seem redundant
 	private final List<NavigationButton> pinnedButtons = new ArrayList<>();
 	private final List<NavigationButton> sortedButtons = new ArrayList<>();
 	private final Map<NavigationButton, JButton> buttonMap = new LinkedHashMap<>();
 	private final Map<NavigationButton, PluginPanel> panelMap = new LinkedHashMap<>();
 	private final List<ChangeListener> changeListeners = new ArrayList<>();
-	private final List<String> pinnedOrderTooltips = new ArrayList<>();
-	private final Set<String> hiddenTooltips = new LinkedHashSet<>();
+	private final List<String> pinnedButtonTooltips = new ArrayList<>();
+	private final Set<String> hiddenButtonTooltips = new LinkedHashSet<>();
 	private final List<NavigationButton> hiddenButtons = new ArrayList<>();
 
-	private final PaintedButton hiddenZoneButton;
-	// Placeholder pin icon for empty pinned area
-	private final Icon pinPlaceholderIcon;
+	// Button to show the list of hidden buttons in a popup
+	private PaintedButton btnShowHiddenButtonsPopup;
 
-	private final ConfigManager configManager; // may be null in tests
-
+	// ToDo: why is this a private getter? 
 	@Getter
 	private NavigationButton selectedNavigation;
 
-	// Dragging state (ghost + placeholder)
+	// Window used to display the button being dragged
 	private javax.swing.JWindow dragGhostWindow;
-	private AWTEventListener globalDragListener;
+
+	// Placeholder panel shown while a button is being dragged to indicate the insertion point
 	private JPanel insertionPlaceholder;
-	private NavigationButton draggingNavigation;
-	private JButton draggingButton;
-	private Container dragSourceParent;
-	private int dragSourceIndex = -1;
-	private Point dragOffset;
-	private boolean isDragging = false;
-	private JPanel currentTargetPanel;
-	private int currentTargetIndex = -1;
 
-	// Button implementation that paints its own background so the Look-and-Feel
-	// cannot change selection/hover visuals. Hover shows `#111111`; otherwise
-	// the background remains `BUTTON_BG`. Selection should only be indicated
-	// by the orange stripe painted by the navigation panel.
-	private class PaintedButton extends JButton
+	// Currently-dragged button
+	private JButton buttonBeingDragged;
+
+	// Whether a button drag operation is in progress
+	boolean isButtonBeingDragged()
 	{
-		private boolean hover = false;
-		private Color forcedBackground = null;
-
-		PaintedButton()
-		{
-			super();
-			setContentAreaFilled(false);
-			setOpaque(false);
-		}
-
-		PaintedButton(Icon i)
-		{
-			super(i);
-			setContentAreaFilled(false);
-			setOpaque(false);
-		}
-
-		@Override
-		public Dimension getMaximumSize()
-		{
-			Dimension d = super.getPreferredSize();
-			d.width = Short.MAX_VALUE;
-			return d;
-		}
-
-		public void setHover(boolean h)
-		{
-			if (this.hover != h)
-			{
-				this.hover = h;
-				repaint();
-			}
-		}
-
-		public void setForcedBackground(Color c)
-		{
-			if (this.forcedBackground != c)
-			{
-				this.forcedBackground = c;
-				repaint();
-			}
-		}
-
-		@Override
-		protected void paintComponent(java.awt.Graphics g)
-		{
-			java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-			try
-			{
-				Color bg = BUTTON_BG;
-				if (forcedBackground != null)
-				{
-					bg = forcedBackground;
-				}
-				else if (hover && !isSelected() && !isDragging)
-				{
-					bg = new Color(0x111111);
-				}
-				g2.setColor(bg);
-				g2.fillRect(0, 0, getWidth(), getHeight());
-			}
-			finally
-			{
-				g2.dispose();
-			}
-			super.paintComponent(g);
-		}
+		return buttonBeingDragged != null;
 	}
-	// Highlight colors
-	private static final Color HIGHLIGHT_HIDDEN_COLOR = new Color(0x444444);
-	private static final Color HIGHLIGHT_SORTED_COLOR = new Color(0x3A3A3A);
 
+	// Whether drag-and-drop reordering is currently allowed
 	private boolean isDragAllowed()
 	{
 		return pinningEnabled || hidingEnabled;
 	}
 
-	// (No saved highlight state needed; buttons/panels are always opaque and have uniform background)
+	// Parent container of the button being dragged (used to restore on cancel)
+	private Container originOfButtonBeingDragged;
+
+	// Dragging state (ghost + placeholder)
+	// ToDo: Figure out what these variables are used for
+	private AWTEventListener globalDragListener;
+	private NavigationButton draggingNavigation;
+	private int dragSourceIndex = -1;
+	private Point dragOffset;
 
 	public SortableJTabbedPane(ConfigManager configManager)
 	{
 		this.configManager = configManager;
-		// initialize painted hidden-zone button (custom painting)
-		hiddenZoneButton = new PaintedButton();
+		
+		InitializeUIComponents();
+
+		// Load persisted state if possible
+		loadState();
+
+		if (DEBUG)
+		{
+			LOGGER.debug("SortableJTabbedPane initialized (debug=true), configManager: {}", configManager);
+		}
+	}
+
+	private void InitializeUIComponents()
+	{
+		// Initialize main panel
 		setLayout(new BorderLayout());
 		setOpaque(true);
 		setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		// Navigation section (vertical list) - use BorderLayout so the sorted area expands
+		// Initialize the navigation buttons panel
 		navigationButtonsPanel.setLayout(new BorderLayout());
-		// keep navigation area opaque with a consistent background
 		navigationButtonsPanel.setOpaque(true);
 		navigationButtonsPanel.setBackground(BUTTON_BG);
-		// subtle left divider between content and navigation buttons
 		navigationButtonsPanel.setBorder(new javax.swing.border.MatteBorder(0, 1, 0, 0, new Color(0x171717)));
-		sortedButtonsPanel.setBackground(BUTTON_BG);
-		pinnedButtonsPanel.setLayout(new BoxLayout(pinnedButtonsPanel, BoxLayout.Y_AXIS));
-		pinnedButtonsPanel.setOpaque(true);
-		pinnedButtonsPanel.setBackground(BUTTON_BG);
-		// Allow the pinned area to collapse to zero when empty; the overridden
-		// `getPreferredSize` will provide a minimum height when necessary (e.g. during drag).
-		//pinnedButtonsPanel.setMaximumSize(new Dimension(Short.MAX_VALUE, MIN_PINNED_HEIGHT));
-		pinnedButtonsPanel.setMinimumSize(new Dimension(0, 0));
-		sortedButtonsPanel.setLayout(new BoxLayout(sortedButtonsPanel, BoxLayout.Y_AXIS));
-		sortedButtonsPanel.setOpaque(true);
-		sortedButtonsPanel.setBackground(BUTTON_BG);
+
+		// Initialize the pinned buttons panel and add to navigation panel
+		JPanel pinnedPluginsPanelWrapper = CreatePinnedPluginsPanel();
+		navigationButtonsPanel.add(pinnedPluginsPanelWrapper, BorderLayout.NORTH);
+
+		// Initialize the sorted buttons panel
+		sortedPluginsPanel.setBackground(BUTTON_BG);
+		sortedPluginsPanel.setLayout(new BoxLayout(sortedPluginsPanel, BoxLayout.Y_AXIS));
+		sortedPluginsPanel.setOpaque(true);
+		sortedPluginsPanel.setBackground(BUTTON_BG);
+		navigationButtonsPanel.add(sortedPluginsPanel, BorderLayout.CENTER);
+
+		// ToDo: dont delete this, it is required when custom window chrome is disabled
+		// We still need to account for these additional buttons in our layout
 		footerHolder_DeleteMe.setLayout(new BorderLayout());
 		footerHolder_DeleteMe.setOpaque(false);
-		hiddenButtonsPanel.setLayout(new BorderLayout());
-		hiddenButtonsPanel.setOpaque(true);
-		hiddenButtonsPanel.setBackground(BUTTON_BG);
-		hiddenButtonsPanel.setMinimumSize(new Dimension(0, MIN_PINNED_HEIGHT));
-		// ensure the hidden drop zone remains visible even when no hidden items exist
-		hiddenButtonsPanel.setPreferredSize(new Dimension(0, MIN_PINNED_HEIGHT));
-		hiddenButtonsPanel.setMaximumSize(new Dimension(Short.MAX_VALUE, MIN_PINNED_HEIGHT));
 
-		// Hidden zone button
-		hiddenZoneButton.setVisible(false);
-		hiddenZoneButton.putClientProperty(FlatClientProperties.STYLE, "focusWidth:0; iconTextGap:8;");
-		hiddenZoneButton.setBorder(new javax.swing.border.EmptyBorder(3,8,3,8));
-		hiddenZoneButton.addActionListener(e -> showHiddenPopup());
-		hiddenButtonsPanel.add(hiddenZoneButton, BorderLayout.CENTER);
+		// Initialize the hidden buttons panel
+		JPanel hiddenPluginsPanel = CreateHiddenPluginsPanel();
+		navigationButtonsPanel.add(hiddenPluginsPanel, BorderLayout.SOUTH);
 
-		// Try to load a shared/plugin-provided invisible icon like other panels (e.g. LootTracker)
+		// Initialize the plugin content panel
+		sidebarContentPanel.setLayout(cardLayout);
+		sidebarContentPanel.setOpaque(false);
+		sidebarContentPanel.add(new JPanel(), "__empty__");
+		add(sidebarContentPanel, BorderLayout.CENTER);
+
+		// ToDo: would be cleaner to add this to a dedicated button component which draws the stripe when the button is active
+		LayerUI<JComponent> activePluginButtonIndicator = new LayerUI<JComponent>()
+		{
+			@Override
+			public void paint(Graphics graphic, JComponent component)
+			{
+				// Paint the view first, then draw overlay
+				super.paint(graphic, component);
+
+				JButton activeButton = GetButtonOfActivePanel();
+
+				// If a button is active, draw the left-side orange stripe
+				if (activeButton != null)
+				{
+					Graphics activePanelIndicatorGraphic = graphic.create();
+					try
+					{
+						activePanelIndicatorGraphic.setColor(SELECTED_STRIPE_COLOR);					
+						Rectangle bounds = SwingUtilities.convertRectangle(activeButton, btnShowHiddenButtonsPopup.getBounds(), component);
+						activePanelIndicatorGraphic.fillRect(0, bounds.y, 3, bounds.height);
+					}
+					finally
+					{
+						activePanelIndicatorGraphic.dispose();
+					}
+				}
+			}
+		};
+
+		JLayer<JComponent> navigationButtonsWrapper = new JLayer<>(navigationButtonsPanel, activePluginButtonIndicator);
+		add(navigationButtonsWrapper, BorderLayout.EAST);
+
+		// Provide style hints similar to old tabs (used by FlatLaf theming)
+		// ToDo: verify if these are still needed with custom painting
+		putClientProperty(FlatClientProperties.STYLE, "tabHeight:26");
+	}
+
+	private JButton GetButtonOfActivePanel()
+	{
+		if (selectedNavigation == null)
+			return null;
+
+		// If any of the hidden plugins is selected, return the hidden-zone button
+		if (hiddenButtons.contains(selectedNavigation))
+			return btnShowHiddenButtonsPopup;
+		else
+			return buttonMap.get(selectedNavigation);
+	}
+
+	private JPanel CreatePinnedPluginsPanel()
+	{
+		// Initialize a wrapper panel for pinned buttons
+		JPanel pinnedPluginsPanelWrapper = new JPanel(new BorderLayout());
+		pinnedPluginsPanelWrapper.setOpaque(true);
+
+		// Initialize the panel which holds the pinned buttons
+		pinnedPluginsPanel.setLayout(new BoxLayout(pinnedPluginsPanel, BoxLayout.Y_AXIS));
+		pinnedPluginsPanel.setOpaque(true);
+		pinnedPluginsPanel.setBackground(BUTTON_BG);
+		pinnedPluginsPanel.setMinimumSize(new Dimension(0, 0));
+		pinnedPluginsPanelWrapper.add(pinnedPluginsPanel, BorderLayout.CENTER);
+		
+		// Add separator below pinned buttons area
+		JSeparator separator = new JSeparator();
+		separator.setPreferredSize(new Dimension(0, 2));
+		pinnedPluginsPanelWrapper.add(separator, BorderLayout.SOUTH);
+
+		return pinnedPluginsPanelWrapper;
+	}
+
+	private JPanel CreateHiddenPluginsPanel() {
+		// Initialize a wrapper panel for hidden buttons
+		JPanel hiddenPluginsPanelWrapper = new JPanel(new BorderLayout());
+		hiddenPluginsPanelWrapper.setOpaque(true);
+
+		// Add separator at the top of hidden plugins panel
+		JSeparator separator = new JSeparator();
+		separator.setPreferredSize(new Dimension(0, 1));
+		hiddenPluginsPanelWrapper.add(separator, BorderLayout.NORTH);
+
+		// Initialize the panel which holds the button to show the popup for hidden plugins
+		hiddenPluginsPanel.setLayout(new BorderLayout());
+		hiddenPluginsPanel.setOpaque(true);
+		hiddenPluginsPanel.setBackground(BUTTON_BG);
+		hiddenPluginsPanel.setMinimumSize(new Dimension(0, MIN_PINNED_HEIGHT));
+		hiddenPluginsPanel.setPreferredSize(new Dimension(0, MIN_PINNED_HEIGHT));
+		hiddenPluginsPanel.setMaximumSize(new Dimension(Short.MAX_VALUE, MIN_PINNED_HEIGHT));
+		hiddenPluginsPanel.add(CreateHiddenPluginsPopupButton(), BorderLayout.CENTER);
+		hiddenPluginsPanelWrapper.add(hiddenPluginsPanel, BorderLayout.CENTER);
+
+		return hiddenPluginsPanelWrapper;
+	}
+
+	private PaintedButton CreateHiddenPluginsPopupButton() {
+		// Initialize the button which shows the popup for hidden buttons
+		PaintedButton hiddenPluginsPopupButton = new PaintedButton(this);
+		hiddenPluginsPopupButton.setVisible(false);
+		hiddenPluginsPopupButton.putClientProperty(FlatClientProperties.STYLE, "focusWidth:0; iconTextGap:8;");
+		hiddenPluginsPopupButton.setBorder(new javax.swing.border.EmptyBorder(3,8,3,8));
+		hiddenPluginsPopupButton.addActionListener(e -> showHiddenPopup());
+		
+		// ToDo: clean this mess up, loading can be done more cleanly and the variable names dont make sense
 		BufferedImage bi = ImageUtil.loadImageResource(LootTrackerPlugin.class, "invisible_icon.png");
 		ImageIcon sharedHiddenIcon = null;
 		if (bi != null)
 		{
 			sharedHiddenIcon = new ImageIcon(ImageUtil.resizeImage(bi, ICON_SIZE, ICON_SIZE));
-			hiddenZoneButton.setIcon(sharedHiddenIcon);
+			hiddenPluginsPopupButton.setIcon(sharedHiddenIcon);
 		}
 		else
 		{
-			hiddenZoneButton.setText("X");
+			// fallback: use text if the image resource cannot be found
+			hiddenPluginsPopupButton.setText("X");
 		}
 
+		// ToDo: figure our if this is needed, I'd expect this to be native to swing buttons
 		// hiddenZoneButton uses custom painting; update hover state instead of
 		// manipulating background so LAF cannot override visuals.
-		hiddenZoneButton.addMouseListener(new MouseAdapter()
+		hiddenPluginsPopupButton.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				if (!isDragging && !hiddenZoneButton.isSelected())
+				if (!isButtonBeingDragged() && !hiddenPluginsPopupButton.isSelected())
 				{
-					hiddenZoneButton.setHover(true);
+					hiddenPluginsPopupButton.setHover(true);
 				}
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				hiddenZoneButton.setHover(false);
+				hiddenPluginsPopupButton.setHover(false);
 			}
 		});
 
-		// Load the pin placeholder icon (used when pinned area has no buttons).
-		// Prefer a bundled mdi_pin resource; fall back to the shared/plugin invisible icon.
-		BufferedImage pinImg = ImageUtil.loadImageResource(SortableJTabbedPane.class, "pin-solid.png");
-		if (pinImg == null)
-		{
-			// also try utility location
-			pinImg = ImageUtil.loadImageResource(SortableJTabbedPane.class, "/util/pin-solid.png");
-		}
-		ImageIcon pinIcon = null;
-		if (pinImg != null)
-		{
-			pinIcon = new ImageIcon(ImageUtil.resizeImage(pinImg, ICON_SIZE, ICON_SIZE));
-		}
-
-		if (pinIcon != null)
-		{
-			pinPlaceholderIcon = pinIcon;
-		}
-		else if (sharedHiddenIcon != null)
-		{
-			// Previously used shared hidden icon as placeholder; keep as fallback
-			pinPlaceholderIcon = sharedHiddenIcon;
-		}
-		else
-		{
-			// fallback: use an empty transparent image so the icon is always defined
-			pinPlaceholderIcon = new ImageIcon(new BufferedImage(ICON_SIZE, ICON_SIZE, BufferedImage.TYPE_INT_ARGB));
-		}
-
-		// add into navigation panel: pinned (north), sorted (center, expands), hidden+footer (south)
-		// Wrap pinned and hidden areas so we can insert separators between sections
-		JPanel pinnedWrapper = new JPanel(new BorderLayout());
-		pinnedWrapper.setOpaque(false);
-		pinnedWrapper.add(pinnedButtonsPanel, BorderLayout.CENTER);
-		JSeparator pinnedSeparator = new JSeparator();
-		pinnedSeparator.setBackground(DEBUG_BUTTON_BG_YELLOW);
-		pinnedSeparator.setPreferredSize(new Dimension(0, 2));
-		pinnedWrapper.add(pinnedSeparator, BorderLayout.SOUTH);
-		navigationButtonsPanel.add(pinnedWrapper, BorderLayout.NORTH);
-
-		navigationButtonsPanel.add(sortedButtonsPanel, BorderLayout.CENTER);
-
-		JPanel hiddenWrapper = new JPanel(new BorderLayout());
-		hiddenWrapper.setOpaque(false);
-		JSeparator hiddenSeparator = new JSeparator();
-		hiddenSeparator.setPreferredSize(new Dimension(0, 1));
-		hiddenWrapper.add(hiddenSeparator, BorderLayout.NORTH);
-		hiddenWrapper.add(hiddenButtonsPanel, BorderLayout.CENTER);
-		navigationButtonsPanel.add(hiddenWrapper, BorderLayout.SOUTH);
-
-		sidebarContentPanel.setLayout(cardLayout);
-		sidebarContentPanel.setOpaque(false);
-		sidebarContentPanel.add(new JPanel(), "__empty__");
-		//JPanel sidebarPanel = new JPanel(new BorderLayout());
-		//sidebarPanel.setOpaque(false);
-		// Place navigation buttons on the right (like original RIGHT tabs) and panel content to the left
-		//sidebarPanel.add(sidebarContentPanel, BorderLayout.CENTER);
-		//sidebarPanel.add(navigationButtonsPanel, BorderLayout.EAST);
-		// Wrap navigation buttons panel in a JLayer so we can paint the
-		// selected orange stripe on top of its children reliably.
-		LayerUI<JComponent> stripeLayerUI = new LayerUI<JComponent>()
-		{
-			@Override
-			public void paint(java.awt.Graphics g, JComponent c)
-			{
-				// Paint the view first (JLayer handles that) then draw overlay
-				super.paint(g, c);
-				if (selectedNavigation == null)
-				{
-					return;
-				}
-				java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-				try
-				{
-					g2.setColor(SELECTED_STRIPE_COLOR);
-					JLayer<?> layer = (JLayer<?>) c;
-					// Draw stripe aligned with hidden-zone button when selected
-					if (hiddenButtons.contains(selectedNavigation))
-					{
-						java.awt.Component hzParent = hiddenZoneButton.getParent();
-						if (hzParent != null && hiddenZoneButton.isVisible())
-						{
-							java.awt.Rectangle r = SwingUtilities.convertRectangle(hzParent, hiddenZoneButton.getBounds(), layer);
-							g2.fillRect(0, r.y, 3, r.height);
-						}
-					}
-					else
-					{
-						JButton sb = buttonMap.get(selectedNavigation);
-						if (sb != null && sb.isVisible())
-						{
-							java.awt.Rectangle r = SwingUtilities.convertRectangle(sb.getParent(), sb.getBounds(), layer);
-							g2.fillRect(0, r.y, 3, r.height);
-						}
-					}
-				}
-				finally
-				{
-					g2.dispose();
-				}
-			}
-		};
-
-		JLayer<JComponent> navLayer = new JLayer<>(navigationButtonsPanel, stripeLayerUI);
-		add(sidebarContentPanel, BorderLayout.CENTER);
-		add(navLayer, BorderLayout.EAST);
-		//add(sidebarPanel, BorderLayout.CENTER);
-		// Provide style hints similar to old tabs (used by FlatLaf theming)
-		putClientProperty(FlatClientProperties.STYLE, "tabHeight:26");
-		// Load persisted state if possible
-		loadState();
-		if (DEBUG)
-		{
-			LOGGER.debug("SortableJTabbedPane initialized (debug=true), configManager: {}", configManager);
-			//navigationButtonsPanel.setBackground(DEBUG_NAV_BG_BLUE);
-			//pinnedButtonsPanel.setBackground(DEBUG_PINNED_BG_GREEN);
-			//sortedButtonsPanel.setBackground(DEBUG_SORTED_BG_ORANGE);
-			footerHolder_DeleteMe.setBackground(DEBUG_HIDDEN_BG_RED);
-			//hiddenButtonsPanel.setBackground(DEBUG_HIDDEN_BG_RED);
-			//sidebarContentPanel.setBackground(DEBUG_CARDS_BG_GREY);
-			//hiddenZoneButton.setBackground(DEBUG_BUTTON_BG_YELLOW);
-			navigationButtonsPanel.setOpaque(true);
-			pinnedButtonsPanel.setOpaque(true);
-			sortedButtonsPanel.setOpaque(true);
-			footerHolder_DeleteMe.setOpaque(true);
-			hiddenButtonsPanel.setOpaque(true);
-			sidebarContentPanel.setOpaque(true);
-			hiddenZoneButton.setOpaque(true);
-		}
+		return hiddenPluginsPopupButton;
 	}
 
+	// ToDo: This needs to be implemented in some way, we need to be able to show the additional buttons when custom window chrome is disabled
 	public void setFooterComponent(JPanel panel)
 	{
 		footerHolder_DeleteMe.removeAll();
@@ -475,6 +386,7 @@ public class SortableJTabbedPane extends JPanel
 		footerHolder_DeleteMe.repaint();
 	}
 
+	// ToDo: Inspect how this is used and interacts with loadState()
 	public void applySortableConfig(boolean pluginEnabled, boolean allowPinning, boolean allowHiding)
 	{
 		boolean previousDragAllowed = isDragAllowed();
@@ -482,21 +394,22 @@ public class SortableJTabbedPane extends JPanel
 		hidingEnabled = pluginEnabled && allowHiding;
 		loadState();
 
-		if (isDragging && previousDragAllowed && !isDragAllowed())
+		if (isButtonBeingDragged() && previousDragAllowed && !isDragAllowed())
 		{
-			Point p = new Point(0, 0);
+			Point mouseLocation = new Point(0, 0);
 			try
 			{
-				PointerInfo pi = MouseInfo.getPointerInfo();
-				if (pi != null)
+				PointerInfo pointerInfo = MouseInfo.getPointerInfo();
+				if (pointerInfo != null)
 				{
-					p = pi.getLocation();
+					mouseLocation = pointerInfo.getLocation();
 				}
 			}
 			catch (Exception ignore)
 			{
 			}
-			finishDrag(p);
+			// ToDo: whis is this handled here?
+			finishDrag(mouseLocation);
 		}
 
 		reassignAllNavigations();
@@ -510,20 +423,20 @@ public class SortableJTabbedPane extends JPanel
 		hiddenButtons.clear();
 
 		List<NavigationButton> allButtons = new ArrayList<>(panelMap.keySet());
-		for (NavigationButton nb : allButtons)
+		for (NavigationButton navigationButton : allButtons)
 		{
-			String tt = safeTooltip(nb);
-			if (hidingEnabled && hiddenTooltips.contains(tt))
+			String buttonTooltip = serializeTooltip(navigationButton);
+			if (hidingEnabled && hiddenButtonTooltips.contains(buttonTooltip))
 			{
-				hiddenButtons.add(nb);
+				hiddenButtons.add(navigationButton);
 				continue;
 			}
-			if (pinningEnabled && pinnedOrderTooltips.contains(tt))
+			if (pinningEnabled && pinnedButtonTooltips.contains(buttonTooltip))
 			{
-				pinnedButtons.add(nb);
+				pinnedButtons.add(navigationButton);
 				continue;
 			}
-			sortedButtons.add(nb);
+			sortedButtons.add(navigationButton);
 		}
 
 		if (pinningEnabled)
@@ -574,8 +487,8 @@ public class SortableJTabbedPane extends JPanel
 		pinnedButtons.remove(navBtn);
 		sortedButtons.remove(navBtn);
 		hiddenButtons.remove(navBtn);
-		pinnedButtonsPanel.remove(btn);
-		sortedButtonsPanel.remove(btn);
+		pinnedPluginsPanel.remove(btn);
+		sortedPluginsPanel.remove(btn);
 		PluginPanel pp = panelMap.remove(navBtn);
 		if (pp != null)
 		{
@@ -590,7 +503,7 @@ public class SortableJTabbedPane extends JPanel
 		saveState();
 		if (DEBUG)
 		{
-			LOGGER.debug("removeNavigation: removed tooltip={}", safeTooltip(navBtn));
+			LOGGER.debug("removeNavigation: removed tooltip={}", serializeTooltip(navBtn));
 		}
 	}
 
@@ -600,12 +513,14 @@ public class SortableJTabbedPane extends JPanel
 	public void setSelectedNavigation(NavigationButton navBtn)
 	{
 		// Do not change selection while a drag operation is in progress
-		if (isDragging)
+		if (isButtonBeingDragged())
 		{
+			// Todo: this should not be reachable; set selection only happens on button click
 			return;
 		}
-		if (navBtn != null && !buttonMap.containsKey(navBtn) && !panelMap.containsKey(navBtn))
+		if (navBtn != null && (!buttonMap.containsKey(navBtn) || !panelMap.containsKey(navBtn)))
 		{
+			// ToDo: this shoudn't happen, but if it does we should just attempt to register the button instead
 			if (DEBUG)
 			{
 				LOGGER.debug("setSelectedNavigation: ignored unknown navBtn={}", navBtn);
@@ -646,35 +561,35 @@ public class SortableJTabbedPane extends JPanel
 		fireChangeEvent(old, navBtn);
 		// Revalidate so parent layout can update based on new preferred size (collapse/expand)
 		revalidate();
-		Container p = getParent();
-		if (p != null)
+		Container parent = getParent();
+		if (parent != null)
 		{
-			p.revalidate();
+			parent.revalidate();
 		}
 		repaint();
 		if (DEBUG)
 		{
-			LOGGER.debug("setSelectedNavigation: from={} to={}", safeTooltip(old), safeTooltip(navBtn));
+			LOGGER.debug("setSelectedNavigation: from={} to={}", serializeTooltip(old), serializeTooltip(navBtn));
 		}
 	}
 
 	/**
 	 * Get the navigation button at a given point relative to this component.
 	 */
-	public NavigationButton getEntryAtPoint(Point p)
+	public NavigationButton getEntryAtPoint(Point point)
 	{
-		for (Map.Entry<NavigationButton, JButton> e : buttonMap.entrySet())
+		for (Map.Entry<NavigationButton, JButton> entry : buttonMap.entrySet())
 		{
-			Rectangle r = SwingUtilities.convertRectangle(e.getValue().getParent(), e.getValue().getBounds(), this);
-			if (r.contains(p))
+			Rectangle bounds = SwingUtilities.convertRectangle(entry.getValue().getParent(), entry.getValue().getBounds(), this);
+			if (bounds.contains(point))
 			{
-				return e.getKey();
+				return entry.getKey();
 			}
 		}
 		return null;
 	}
 
-	// --- Pin / Unpin / Hide / Unhide API (drag integration later) ---
+	// --- Pin / Unpin / Hide / Unhide
 
 	public void pin(NavigationButton navBtn)
 	{
@@ -684,14 +599,15 @@ public class SortableJTabbedPane extends JPanel
 		}
 		if (navBtn == null || hiddenButtons.contains(navBtn) || pinnedButtons.contains(navBtn))
 		{
+			// ToDo: return if hidden buttons contains this entry? that's incorrect, it should be possible move a hidden button to pinned
 			return;
 		}
 		sortedButtons.remove(navBtn);
 		pinnedButtons.add(navBtn);
-		String tt = safeTooltip(navBtn);
-		if (!pinnedOrderTooltips.contains(tt))
+		String tooltip = serializeTooltip(navBtn);
+		if (!pinnedButtonTooltips.contains(tooltip))
 		{
-			pinnedOrderTooltips.add(tt);
+			pinnedButtonTooltips.add(tooltip);
 		}
 		reorderPinnedBySavedOrder();
 		rebuildSortedPanel();
@@ -704,7 +620,7 @@ public class SortableJTabbedPane extends JPanel
 		{
 			return;
 		}
-		pinnedOrderTooltips.remove(safeTooltip(navBtn));
+		pinnedButtonTooltips.remove(serializeTooltip(navBtn));
 		sortedButtons.add(navBtn);
 		Collections.sort(sortedButtons, NavigationButton.COMPARATOR);
 		rebuildSortedPanel();
@@ -727,10 +643,10 @@ public class SortableJTabbedPane extends JPanel
 			return;
 		}
 		pinnedButtons.remove(navBtn);
-		pinnedOrderTooltips.remove(safeTooltip(navBtn));
+		pinnedButtonTooltips.remove(serializeTooltip(navBtn));
 		sortedButtons.remove(navBtn);
 		hiddenButtons.add(navBtn);
-		hiddenTooltips.add(safeTooltip(navBtn));
+		hiddenButtonTooltips.add(serializeTooltip(navBtn));
 		if (buttonMap.containsKey(navBtn))
 		{
 			rebuildSortedPanel();
@@ -751,7 +667,7 @@ public class SortableJTabbedPane extends JPanel
 		{
 			return;
 		}
-		hiddenTooltips.remove(safeTooltip(navBtn));
+		hiddenButtonTooltips.remove(serializeTooltip(navBtn));
 		// restore as sorted (user may re-pin later)
 		sortedButtons.add(navBtn);
 		Collections.sort(sortedButtons, NavigationButton.COMPARATOR);
@@ -760,28 +676,29 @@ public class SortableJTabbedPane extends JPanel
 		saveState();
 	}
 
-	public void addChangeListener(ChangeListener l)
+	public void addChangeListener(ChangeListener listener)
 	{
-		if (l != null)
+		if (listener != null)
 		{
-			changeListeners.add(l);
+			changeListeners.add(listener);
 		}
 	}
 
-	public void removeChangeListener(ChangeListener l)
+	public void removeChangeListener(ChangeListener listener)
 	{
-		changeListeners.remove(l);
+		changeListeners.remove(listener);
 	}
 
-	private void fireChangeEvent(NavigationButton oldSel, NavigationButton newSel)
+	private void fireChangeEvent(NavigationButton previousSelection, NavigationButton newSelection)
 	{
-		ChangeEvent ev = new ChangeEvent(this);
-		for (ChangeListener l : new ArrayList<>(changeListeners))
+		ChangeEvent event = new ChangeEvent(this);
+		for (ChangeListener listener : new ArrayList<>(changeListeners))
 		{
-			l.stateChanged(ev);
+			listener.stateChanged(event);
 		}
 	}
 
+	// ToDo: this can probably be handled automatically without overriding the preferred size
 	@Override
 	public Dimension getPreferredSize()
 	{
@@ -811,9 +728,9 @@ public class SortableJTabbedPane extends JPanel
 		{
 			LOGGER.debug("rebuildSortedPanel: pinned={} sorted={} hidden={}", pinnedButtons.size(), sortedButtons.size(), hiddenButtons.size());
 		}
-		pinnedButtonsPanel.removeAll();
+		pinnedPluginsPanel.removeAll();
 		// No rigid placeholder here; pinned area sizing is handled by getPreferredSize()
-		sortedButtonsPanel.removeAll();
+		sortedPluginsPanel.removeAll();
 		buttonMap.clear();
 		int visiblePinned = 0;
 		for (NavigationButton nb : pinnedButtons)
@@ -821,7 +738,7 @@ public class SortableJTabbedPane extends JPanel
 			if (!hiddenButtons.contains(nb))
 			{
 				JButton b = buildButton(nb);
-				pinnedButtonsPanel.add(b);
+				pinnedPluginsPanel.add(b);
 				buttonMap.put(nb, b);
 				visiblePinned++;
 			}
@@ -831,7 +748,7 @@ public class SortableJTabbedPane extends JPanel
 			if (!hiddenButtons.contains(nb))
 			{
 				JButton b = buildButton(nb);
-				sortedButtonsPanel.add(b);
+				sortedPluginsPanel.add(b);
 				buttonMap.put(nb, b);
 			}
 		}
@@ -842,10 +759,10 @@ public class SortableJTabbedPane extends JPanel
 		// (in which case the insertion placeholder takes its place).
 		if (pinningEnabled && visiblePinned == 0)
 		{
-			boolean insertionInPinned = insertionPlaceholder != null && insertionPlaceholder.getParent() == pinnedButtonsPanel;
+			boolean insertionInPinned = insertionPlaceholder != null && insertionPlaceholder.getParent() == pinnedPluginsPanel;
 			if (!insertionInPinned)
 			{
-				pinnedButtonsPanel.add(createPinPlaceholder(false));
+				pinnedPluginsPanel.add(createPinPlaceholder(false));
 			}
 		}
 		else if (!pinningEnabled)
@@ -861,25 +778,26 @@ public class SortableJTabbedPane extends JPanel
 			updateButtonStripe(e.getValue(), sel);
 		}
 		updateHiddenButton();
-		pinnedButtonsPanel.setVisible(pinningEnabled);
-		java.awt.Component pinnedParent = pinnedButtonsPanel.getParent();
+		pinnedPluginsPanel.setVisible(pinningEnabled);
+		java.awt.Component pinnedParent = pinnedPluginsPanel.getParent();
 		if (pinnedParent != null)
 		{
 			pinnedParent.setVisible(pinningEnabled);
 		}
-		pinnedButtonsPanel.revalidate();
-		sortedButtonsPanel.revalidate();
+		pinnedPluginsPanel.revalidate();
+		sortedPluginsPanel.revalidate();
 		repaint();
 	}
 
+	// ToDo: a lot of this code can most likely be moved to the PaintedButton class itself
 	private JButton buildButton(NavigationButton navBtn)
 	{
 		if (DEBUG)
 		{
-			LOGGER.debug("buildButton: tooltip={}", safeTooltip(navBtn));
+			LOGGER.debug("buildButton: tooltip={}", serializeTooltip(navBtn));
 		}
 		Icon icon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), ICON_SIZE, ICON_SIZE));
-		PaintedButton btn = new PaintedButton(icon);
+		PaintedButton btn = new PaintedButton(this, icon);
 		btn.setToolTipText(navBtn.getTooltip());
 		btn.setHorizontalAlignment(JButton.LEFT);
 		// FlatLaf style is left as a fallback but we fully control painting above.
@@ -891,7 +809,7 @@ public class SortableJTabbedPane extends JPanel
 		btn.setBorder(new javax.swing.border.EmptyBorder(5,8,5,6));
 		// Action listener (keyboard or programmatic activation) — perform toggle/select
 		btn.addActionListener((ActionEvent e) -> {
-			if (!isDragging)
+			if (!isButtonBeingDragged())
 			{
 				handleButtonClick(navBtn);
 			}
@@ -909,7 +827,7 @@ public class SortableJTabbedPane extends JPanel
 				dragging[0] = false;
 				if (DEBUG)
 				{
-					LOGGER.debug("mousePressed: nav={}, point={}", safeTooltip(navBtn), pressPoint[0]);
+					LOGGER.debug("mousePressed: nav={}, point={}", serializeTooltip(navBtn), pressPoint[0]);
 				}
 			}
 
@@ -930,7 +848,7 @@ public class SortableJTabbedPane extends JPanel
 				int dy = e.getY() - pressPoint[0].y;
 				double dist = Math.sqrt((double) dx * dx + (double) dy * dy);
 				// If a global drag is active, ignore this local release — finishDrag will run from the AWT listener
-				if (isDragging)
+				if (isButtonBeingDragged())
 				{
 					pressPoint[0] = null;
 					dragging[0] = false;
@@ -939,7 +857,7 @@ public class SortableJTabbedPane extends JPanel
 				Point dropPoint = SwingUtilities.convertPoint(btn, e.getPoint(), SortableJTabbedPane.this);
 				if (DEBUG)
 				{
-					LOGGER.debug("mouseReleased: nav={}, dist={}, dragging={}, dropPoint={}", safeTooltip(navBtn), dist, dragging[0], dropPoint);
+					LOGGER.debug("mouseReleased: nav={}, dist={}, dragging={}, dropPoint={}", serializeTooltip(navBtn), dist, dragging[0], dropPoint);
 				}
 				if (dragging[0] || dist > DRAG_THRESHOLD)
 				{
@@ -980,7 +898,7 @@ public class SortableJTabbedPane extends JPanel
 				@Override
 				public void mouseEntered(MouseEvent e)
 				{
-					if (!isDragging)
+					if (!isButtonBeingDragged())
 					{
 						btn.setHover(true);
 					}
@@ -995,9 +913,9 @@ public class SortableJTabbedPane extends JPanel
 		return btn;
 	}
 
-	private static String panelKey(NavigationButton nb)
+	private static String panelKey(NavigationButton navigationButton)
 	{
-		return Integer.toHexString(System.identityHashCode(nb));
+		return Integer.toHexString(System.identityHashCode(navigationButton));
 	}
 
 	private void handleDrop(NavigationButton navBtn, Point dropPoint)
@@ -1008,11 +926,11 @@ public class SortableJTabbedPane extends JPanel
 		}
 		if (DEBUG)
 		{
-			LOGGER.debug("handleDrop: nav={}, dropPoint={}", safeTooltip(navBtn), dropPoint);
+			LOGGER.debug("handleDrop: nav={}, dropPoint={}", serializeTooltip(navBtn), dropPoint);
 		}
-		Rectangle pinnedBounds = SwingUtilities.convertRectangle(pinnedButtonsPanel.getParent(), pinnedButtonsPanel.getBounds(), this);
-		Rectangle sortedBounds = SwingUtilities.convertRectangle(sortedButtonsPanel.getParent(), sortedButtonsPanel.getBounds(), this);
-		Rectangle hiddenBounds = SwingUtilities.convertRectangle(hiddenButtonsPanel.getParent(), hiddenButtonsPanel.getBounds(), this);
+		Rectangle pinnedBounds = SwingUtilities.convertRectangle(pinnedPluginsPanel.getParent(), pinnedPluginsPanel.getBounds(), this);
+		Rectangle sortedBounds = SwingUtilities.convertRectangle(sortedPluginsPanel.getParent(), sortedPluginsPanel.getBounds(), this);
+		Rectangle hiddenBounds = SwingUtilities.convertRectangle(hiddenPluginsPanel.getParent(), hiddenPluginsPanel.getBounds(), this);
 
 		boolean wasPinned = pinnedButtons.contains(navBtn);
 
@@ -1020,7 +938,7 @@ public class SortableJTabbedPane extends JPanel
 		{
 			if (DEBUG)
 			{
-				LOGGER.debug("handleDrop: dropping into hidden zone -> hide {}", safeTooltip(navBtn));
+				LOGGER.debug("handleDrop: dropping into hidden zone -> hide {}", serializeTooltip(navBtn));
 			}
 			hide(navBtn);
 			return;
@@ -1130,7 +1048,7 @@ public class SortableJTabbedPane extends JPanel
 
 	private void startDrag(NavigationButton navBtn, Point pressScreen)
 	{
-		if (navBtn == null || isDragging || !isDragAllowed())
+		if (navBtn == null || isButtonBeingDragged() || !isDragAllowed())
 		{
 			return;
 		}
@@ -1143,17 +1061,17 @@ public class SortableJTabbedPane extends JPanel
 
 		// Leave the static pin placeholder in place here; updateDrag will remove
 		// it only when the insertion placeholder is placed into the pinned area.
-		pinnedButtonsPanel.revalidate();
-		pinnedButtonsPanel.repaint();
-		draggingButton = buttonMap.get(navBtn);
+		pinnedPluginsPanel.revalidate();
+		pinnedPluginsPanel.repaint();
+		buttonBeingDragged = buttonMap.get(navBtn);
 		dragOffset = new Point(8, 8);
 		// remember source parent/index so we can restore on cancel
-		if (draggingButton != null)
+		if (buttonBeingDragged != null)
 		{
-			dragSourceParent = draggingButton.getParent();
+			originOfButtonBeingDragged = buttonBeingDragged.getParent();
 			try
 			{
-				dragSourceIndex = dragSourceParent.getComponentZOrder(draggingButton);
+				dragSourceIndex = originOfButtonBeingDragged.getComponentZOrder(buttonBeingDragged);
 			}
 			catch (Exception ex)
 			{
@@ -1162,7 +1080,7 @@ public class SortableJTabbedPane extends JPanel
 		}
 
 		// create placeholder sized like the button
-		Dimension prefSize = draggingButton != null ? draggingButton.getPreferredSize() : new Dimension(ICON_SIZE + 12, 24);
+		Dimension prefSize = buttonBeingDragged != null ? buttonBeingDragged.getPreferredSize() : new Dimension(ICON_SIZE + 12, 24);
 		insertionPlaceholder = new JPanel()
 		{
 			@Override
@@ -1197,22 +1115,22 @@ public class SortableJTabbedPane extends JPanel
 		}
 
 		// insert placeholder where the button was (if visible in UI)
-		if (draggingButton != null && dragSourceParent != null)
+		if (buttonBeingDragged != null && originOfButtonBeingDragged != null)
 		{
 			try
 			{
-				if (dragSourceIndex >= 0 && dragSourceIndex <= dragSourceParent.getComponentCount())
+				if (dragSourceIndex >= 0 && dragSourceIndex <= originOfButtonBeingDragged.getComponentCount())
 				{
-					dragSourceParent.add(insertionPlaceholder, dragSourceIndex);
+					originOfButtonBeingDragged.add(insertionPlaceholder, dragSourceIndex);
 				}
 				else
 				{
-					dragSourceParent.add(insertionPlaceholder);
+					originOfButtonBeingDragged.add(insertionPlaceholder);
 				}
 				// hide the original button while dragging so layout remains stable
-				draggingButton.setVisible(false);
-				dragSourceParent.revalidate();
-				dragSourceParent.repaint();
+				buttonBeingDragged.setVisible(false);
+				originOfButtonBeingDragged.revalidate();
+				originOfButtonBeingDragged.repaint();
 			}
 			catch (Exception ex)
 			{
@@ -1269,11 +1187,11 @@ public class SortableJTabbedPane extends JPanel
 			dragGhostWindow.setBackground(new Color(0, 0, 0, 0));
 			dragGhostWindow.setAlwaysOnTop(true);
 			// compute offset relative to original button if available
-			if (draggingButton != null)
+			if (buttonBeingDragged != null)
 			{
 				try
 				{
-					Point btnOnScreen = draggingButton.getLocationOnScreen();
+					Point btnOnScreen = buttonBeingDragged.getLocationOnScreen();
 					dragOffset = new Point(pressScreen.x - btnOnScreen.x, pressScreen.y - btnOnScreen.y);
 				}
 				catch (IllegalComponentStateException ex)
@@ -1313,10 +1231,9 @@ public class SortableJTabbedPane extends JPanel
 			}
 		};
 		Toolkit.getDefaultToolkit().addAWTEventListener(globalDragListener, AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.MOUSE_EVENT_MASK);
-		isDragging = true;
 		// Ensure UI reflects drag state (show hidden zone and expand pinned drop target)
 		updateHiddenButton();
-		pinnedButtonsPanel.revalidate();
+		pinnedPluginsPanel.revalidate();
 		navigationButtonsPanel.revalidate();
 		revalidate();
 		repaint();
@@ -1324,7 +1241,7 @@ public class SortableJTabbedPane extends JPanel
 
 	private void updateDrag(Point screenPoint)
 	{
-		if (!isDragging)
+		if (!isButtonBeingDragged())
 		{
 			return;
 		}
@@ -1340,9 +1257,9 @@ public class SortableJTabbedPane extends JPanel
 		// determine which area we're over and update placeholder position
 		Point p = new Point(screenPoint);
 		SwingUtilities.convertPointFromScreen(p, this);
-		Rectangle pinnedBounds = SwingUtilities.convertRectangle(pinnedButtonsPanel.getParent(), pinnedButtonsPanel.getBounds(), this);
-		Rectangle sortedBounds = SwingUtilities.convertRectangle(sortedButtonsPanel.getParent(), sortedButtonsPanel.getBounds(), this);
-		Rectangle hiddenBounds = SwingUtilities.convertRectangle(hiddenButtonsPanel.getParent(), hiddenButtonsPanel.getBounds(), this);
+		Rectangle pinnedBounds = SwingUtilities.convertRectangle(pinnedPluginsPanel.getParent(), pinnedPluginsPanel.getBounds(), this);
+		Rectangle sortedBounds = SwingUtilities.convertRectangle(sortedPluginsPanel.getParent(), sortedPluginsPanel.getBounds(), this);
+		Rectangle hiddenBounds = SwingUtilities.convertRectangle(hiddenPluginsPanel.getParent(), hiddenPluginsPanel.getBounds(), this);
 
 		boolean overHidden = hidingEnabled && hiddenBounds.contains(p);
 		boolean overPinned = pinningEnabled && pinnedBounds.contains(p);
@@ -1380,8 +1297,6 @@ public class SortableJTabbedPane extends JPanel
 				// If there are no other visible pinned buttons, show the static pin placeholder
 				addStaticPinPlaceholder();
 			}
-			currentTargetPanel = null;
-			currentTargetIndex = -1;
 			return;
 		}
 		else
@@ -1393,7 +1308,7 @@ public class SortableJTabbedPane extends JPanel
 		if (overPinned)
 		{
 			showSortedHighlight(false);
-			int idx = computeInsertionIndexForPanel(pinnedButtonsPanel, p.y);
+			int idx = computeInsertionIndexForPanel(pinnedPluginsPanel, p.y);
 			if (insertionPlaceholder != null && insertionPlaceholder.getParent() != null)
 			{
 				insertionPlaceholder.getParent().remove(insertionPlaceholder);
@@ -1402,19 +1317,16 @@ public class SortableJTabbedPane extends JPanel
 			// Remove any static pin placeholder we added earlier so the insertion placeholder
 			// can take its place while dragging
 			removeStaticPinPlaceholder();
-			if (idx < 0 || idx > pinnedButtonsPanel.getComponentCount())
+			if (idx < 0 || idx > pinnedPluginsPanel.getComponentCount())
 			{
-				pinnedButtonsPanel.add(insertionPlaceholder);
-				currentTargetIndex = pinnedButtonsPanel.getComponentCount() - 1;
+				pinnedPluginsPanel.add(insertionPlaceholder);
 			}
 			else
 			{
-				pinnedButtonsPanel.add(insertionPlaceholder, idx);
-				currentTargetIndex = idx;
+				pinnedPluginsPanel.add(insertionPlaceholder, idx);
 			}
-			currentTargetPanel = pinnedButtonsPanel;
-			pinnedButtonsPanel.revalidate();
-			pinnedButtonsPanel.repaint();
+			pinnedPluginsPanel.revalidate();
+			pinnedPluginsPanel.repaint();
 			// hide the ghost while the insertion placeholder is shown
 			if (dragGhostWindow != null)
 			{
@@ -1460,10 +1372,8 @@ public class SortableJTabbedPane extends JPanel
 				// If there are no other visible pinned buttons, show the static pin placeholder
 				addStaticPinPlaceholder();
 			}
-			currentTargetPanel = sortedButtonsPanel;
-			currentTargetIndex = -1;
-			sortedButtonsPanel.revalidate();
-			sortedButtonsPanel.repaint();
+			sortedPluginsPanel.revalidate();
+			sortedPluginsPanel.repaint();
 			return;
 		}
 
@@ -1493,8 +1403,6 @@ public class SortableJTabbedPane extends JPanel
 			// If there are no other visible pinned buttons, show the static pin placeholder
 			addStaticPinPlaceholder();
 		}
-		currentTargetPanel = null;
-		currentTargetIndex = -1;
 		showHiddenHighlight(false);
 		showSortedHighlight(false);
 		revalidate();
@@ -1503,7 +1411,7 @@ public class SortableJTabbedPane extends JPanel
 
 	private void finishDrag(Point screenPoint)
 	{
-		if (!isDragging)
+		if (!isButtonBeingDragged())
 		{
 			return;
 		}
@@ -1540,9 +1448,9 @@ public class SortableJTabbedPane extends JPanel
 		Point p = new Point(screenPoint);
 		SwingUtilities.convertPointFromScreen(p, this);
 
-		Rectangle pinnedBounds = SwingUtilities.convertRectangle(pinnedButtonsPanel.getParent(), pinnedButtonsPanel.getBounds(), this);
-		Rectangle sortedBounds = SwingUtilities.convertRectangle(sortedButtonsPanel.getParent(), sortedButtonsPanel.getBounds(), this);
-		Rectangle hiddenBounds = SwingUtilities.convertRectangle(hiddenButtonsPanel.getParent(), hiddenButtonsPanel.getBounds(), this);
+		Rectangle pinnedBounds = SwingUtilities.convertRectangle(pinnedPluginsPanel.getParent(), pinnedPluginsPanel.getBounds(), this);
+		Rectangle sortedBounds = SwingUtilities.convertRectangle(sortedPluginsPanel.getParent(), sortedPluginsPanel.getBounds(), this);
+		Rectangle hiddenBounds = SwingUtilities.convertRectangle(hiddenPluginsPanel.getParent(), hiddenPluginsPanel.getBounds(), this);
 
 		boolean droppedInZone = pinnedBounds.contains(p) || sortedBounds.contains(p) || hiddenBounds.contains(p);
 
@@ -1553,15 +1461,15 @@ public class SortableJTabbedPane extends JPanel
 		}
 
 		// restore the original button visibility
-		if (draggingButton != null)
+		if (buttonBeingDragged != null)
 		{
 			try
 			{
-				draggingButton.setVisible(true);
-				if (dragSourceParent != null)
+				buttonBeingDragged.setVisible(true);
+				if (originOfButtonBeingDragged != null)
 				{
-					dragSourceParent.revalidate();
-					dragSourceParent.repaint();
+					originOfButtonBeingDragged.revalidate();
+					originOfButtonBeingDragged.repaint();
 				}
 			}
 			catch (Exception ex)
@@ -1589,17 +1497,14 @@ public class SortableJTabbedPane extends JPanel
 		showSortedHighlight(false);
 		insertionPlaceholder = null;
 		draggingNavigation = null;
-		draggingButton = null;
-		dragSourceParent = null;
+		buttonBeingDragged = null;
+		originOfButtonBeingDragged = null;
 		dragSourceIndex = -1;
 		dragOffset = null;
-		isDragging = false;
-		currentTargetPanel = null;
-		currentTargetIndex = -1;
 
 		// Ensure UI collapses/hides zones that should not be visible after drag
 		updateHiddenButton();
-		pinnedButtonsPanel.revalidate();
+		pinnedPluginsPanel.revalidate();
 		navigationButtonsPanel.revalidate();
 		revalidate();
 		repaint();
@@ -1607,7 +1512,7 @@ public class SortableJTabbedPane extends JPanel
 
 	private void showHiddenHighlight(boolean show)
 	{
-		java.awt.Component parent = hiddenButtonsPanel.getParent();
+		java.awt.Component parent = hiddenPluginsPanel.getParent();
 		if (!(parent instanceof javax.swing.JComponent))
 		{
 			return;
@@ -1617,12 +1522,12 @@ public class SortableJTabbedPane extends JPanel
 		{
 			parentComp.setBackground(BUTTON_BG);
 			parentComp.setOpaque(true);
-			hiddenZoneButton.setForcedBackground(null);
-			hiddenZoneButton.setHover(false);
+			btnShowHiddenButtonsPopup.setForcedBackground(null);
+			btnShowHiddenButtonsPopup.setHover(false);
 			parentComp.revalidate();
 			parentComp.repaint();
-			hiddenZoneButton.revalidate();
-			hiddenZoneButton.repaint();
+			btnShowHiddenButtonsPopup.revalidate();
+			btnShowHiddenButtonsPopup.repaint();
 			return;
 		}
 		if (show)
@@ -1631,22 +1536,23 @@ public class SortableJTabbedPane extends JPanel
 			parentComp.setBackground(HIGHLIGHT_HIDDEN_COLOR);
 
 			// Also tint the hidden-zone button itself so the cue is visible on the button
-			hiddenZoneButton.setForcedBackground(HIGHLIGHT_HIDDEN_COLOR);
+			btnShowHiddenButtonsPopup.setForcedBackground(HIGHLIGHT_HIDDEN_COLOR);
 		}
 		else
 		{
 			// restore to the consistent BUTTON_BG
 			parentComp.setBackground(BUTTON_BG);
 			parentComp.setOpaque(true);
-			hiddenZoneButton.setForcedBackground(null);
-			hiddenZoneButton.setHover(false);
+			btnShowHiddenButtonsPopup.setForcedBackground(null);
+			btnShowHiddenButtonsPopup.setHover(false);
 		}
 		parentComp.revalidate();
 		parentComp.repaint();
-		hiddenZoneButton.revalidate();
-		hiddenZoneButton.repaint();
+		btnShowHiddenButtonsPopup.revalidate();
+		btnShowHiddenButtonsPopup.repaint();
 	}
 
+	// ToDo: this should probably be part of the `CreatePinnedPluginsPanel` method
 	/**
 	 * Add a static pin placeholder to the pinned buttons panel if there are no
 	 * other visible pinned buttons (excluding the one being dragged).
@@ -1663,12 +1569,12 @@ public class SortableJTabbedPane extends JPanel
 		JPanel placeholderPanel = new JPanel(new BorderLayout())
 		{
 			@Override
-			protected void paintComponent(java.awt.Graphics g)
+			protected void paintComponent(Graphics graphics)
 			{
-				super.paintComponent(g);
+				super.paintComponent(graphics);
 				try
 				{
-					Graphics2D g2 = (Graphics2D) g.create();
+					Graphics2D g2 = (Graphics2D) graphics.create();
 					g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 					g2.setColor(ColorScheme.MEDIUM_GRAY_COLOR);
 					g2.setStroke(new BasicStroke(stroke, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f, dash, 0f));
@@ -1677,6 +1583,7 @@ public class SortableJTabbedPane extends JPanel
 					int x = (w - dashedBoxSize) / 2;
 					int y = (h - dashedBoxSize) / 2;
 					g2.drawRect(x, y, dashedBoxSize, dashedBoxSize);
+					// ToDo: dispose should be in try-finally
 					g2.dispose();
 				}
 				catch (Exception ex)
@@ -1686,6 +1593,30 @@ public class SortableJTabbedPane extends JPanel
 			}
 		};
 		placeholderPanel.setOpaque(false);
+
+		// ToDo: refactor image loading, this implementation is not ideal
+		Icon pinPlaceholderIcon;
+		BufferedImage pinImg = ImageUtil.loadImageResource(SortableJTabbedPane.class, "pin-solid.png");
+		if (pinImg == null)
+		{
+			// also try utility location
+			pinImg = ImageUtil.loadImageResource(SortableJTabbedPane.class, "/util/pin-solid.png");
+		}
+		ImageIcon pinIcon = null;
+		if (pinImg != null)
+		{
+			pinIcon = new ImageIcon(ImageUtil.resizeImage(pinImg, ICON_SIZE, ICON_SIZE));
+		}
+
+		if (pinIcon != null)
+		{
+			pinPlaceholderIcon = pinIcon;
+		}
+		else
+		{
+			// fallback: use an empty transparent image so the icon is always defined
+			pinPlaceholderIcon = new ImageIcon(new BufferedImage(ICON_SIZE, ICON_SIZE, BufferedImage.TYPE_INT_ARGB));
+		}
 
 		javax.swing.JLabel pinLabel = new javax.swing.JLabel(pinPlaceholderIcon);
 		pinLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
@@ -1705,6 +1636,7 @@ public class SortableJTabbedPane extends JPanel
 		return placeholderPanel;
 	}
 
+	// ToDo: why is this a separate method from createPinPlaceholder?
 	private void addStaticPinPlaceholder()
 	{
 		if (!pinningEnabled)
@@ -1712,7 +1644,7 @@ public class SortableJTabbedPane extends JPanel
 			return;
 		}
 		// don't add if already present
-		for (Component c : pinnedButtonsPanel.getComponents())
+		for (Component c : pinnedPluginsPanel.getComponents())
 		{
 			if (c instanceof javax.swing.JComponent && Boolean.TRUE.equals(((javax.swing.JComponent) c).getClientProperty("pinPlaceholder")))
 			{
@@ -1740,20 +1672,22 @@ public class SortableJTabbedPane extends JPanel
 		}
 
 		JPanel placeholderPanel = createPinPlaceholder(true);
-		pinnedButtonsPanel.add(placeholderPanel);
-		pinnedButtonsPanel.revalidate();
-		pinnedButtonsPanel.repaint();
+		pinnedPluginsPanel.add(placeholderPanel);
+		pinnedPluginsPanel.revalidate();
+		pinnedPluginsPanel.repaint();
 	}
 
+	// ToDo: this doesn't seem logical, we most likely just want to hide the placeholder
 	private void removeStaticPinPlaceholder()
 	{
-		for (Component c : pinnedButtonsPanel.getComponents())
+		for (Component component : pinnedPluginsPanel.getComponents())
 		{
-			if (c instanceof javax.swing.JComponent && Boolean.TRUE.equals(((javax.swing.JComponent) c).getClientProperty("pinPlaceholder")))
+			// ToDo: 🤮
+			if (component instanceof javax.swing.JComponent && Boolean.TRUE.equals(((javax.swing.JComponent) component).getClientProperty("pinPlaceholder")))
 			{
 				try
 				{
-					pinnedButtonsPanel.remove(c);
+					pinnedPluginsPanel.remove(component);
 				}
 				catch (Exception ex)
 				{
@@ -1761,82 +1695,85 @@ public class SortableJTabbedPane extends JPanel
 				break;
 			}
 		}
-		pinnedButtonsPanel.revalidate();
-		pinnedButtonsPanel.repaint();
+		pinnedPluginsPanel.revalidate();
+		pinnedPluginsPanel.repaint();
 	}
 
-	private void showSortedHighlight(boolean show)
+	// ToDo: we can probably have a single method for showing drag and drop highlights
+	private void showSortedHighlight(boolean showHighlight)
 	{
-		if (show)
+		if (showHighlight)
 		{
-			sortedButtonsPanel.setOpaque(true);
-			sortedButtonsPanel.setBackground(HIGHLIGHT_SORTED_COLOR);
+			sortedPluginsPanel.setOpaque(true);
+			sortedPluginsPanel.setBackground(HIGHLIGHT_SORTED_COLOR);
 
 			// Tint each button in the sorted area so the highlight is visible
-			for (Component c : sortedButtonsPanel.getComponents())
+			for (Component component : sortedPluginsPanel.getComponents())
 			{
-				if (c instanceof JButton)
+				if (component instanceof JButton)
 				{
-					JButton b = (JButton) c;
-					if (b instanceof PaintedButton)
+					JButton button = (JButton) component;
+					if (button instanceof PaintedButton)
 					{
-						((PaintedButton) b).setForcedBackground(HIGHLIGHT_SORTED_COLOR);
+						((PaintedButton) button).setForcedBackground(HIGHLIGHT_SORTED_COLOR);
 					}
 					else
 					{
-						b.setOpaque(true);
-						b.setBackground(HIGHLIGHT_SORTED_COLOR);
+						button.setOpaque(true);
+						button.setBackground(HIGHLIGHT_SORTED_COLOR);
 					}
-					b.revalidate();
-					b.repaint();
+					button.revalidate();
+					button.repaint();
 				}
 			}
-			sortedButtonsPanel.revalidate();
-			sortedButtonsPanel.repaint();
+			sortedPluginsPanel.revalidate();
+			sortedPluginsPanel.repaint();
 		}
 		else
 		{
 			// restore to consistent BUTTON_BG
-			sortedButtonsPanel.setBackground(BUTTON_BG);
-			sortedButtonsPanel.setOpaque(true);
-			for (Component c : sortedButtonsPanel.getComponents())
+			sortedPluginsPanel.setBackground(BUTTON_BG);
+			sortedPluginsPanel.setOpaque(true);
+			for (Component component : sortedPluginsPanel.getComponents())
 			{
-				if (c instanceof JButton)
+				if (component instanceof JButton)
 				{
-					JButton b = (JButton) c;
-					if (b instanceof PaintedButton)
+					JButton button = (JButton) component;
+					if (button instanceof PaintedButton)
 					{
-						((PaintedButton) b).setForcedBackground(null);
+						((PaintedButton) button).setForcedBackground(null);
 					}
 					else
 					{
-						b.setOpaque(true);
-						b.setBackground(BUTTON_BG);
+						button.setOpaque(true);
+						button.setBackground(BUTTON_BG);
 					}
-					b.revalidate();
-					b.repaint();
+					button.revalidate();
+					button.repaint();
 				}
 			}
-			sortedButtonsPanel.revalidate();
-			sortedButtonsPanel.repaint();
+			sortedPluginsPanel.revalidate();
+			sortedPluginsPanel.repaint();
 		}
 	}
 
+	//ToDo: what is this? The active-button indicator is already done in a different method, so what is this used for?
 	/**
 	 * Update button border to show a left stripe when selected.
 	 */
-	private void updateButtonStripe(JButton b, boolean selected)
+	private void updateButtonStripe(JButton button, boolean selected)
 	{
-		if (b == null)
+		if (button == null)
 		{
 			return;
 		}
 		// Keep a consistent inset so widths remain stable whether selected or not.
 		// The visual orange stripe is painted on the navigation panel (on top),
 		// so buttons themselves should not change background when selected.
-		b.setBorder(new javax.swing.border.EmptyBorder(5, 8, 5, 6));
+		button.setBorder(new javax.swing.border.EmptyBorder(5, 8, 5, 6));
 	}
 
+	// ToDo: what is this for, seems like a dumb wrapper around setSelectedNavigation?
 	/**
 	 * Handle a user click on a navigation button: toggle if already selected.
 	 */
@@ -1855,24 +1792,25 @@ public class SortableJTabbedPane extends JPanel
 	private void reorderPinnedBySavedOrderFromList()
 	{
 		// Rewrite saved order based on current pinnedButtons sequence
-		pinnedOrderTooltips.clear();
-		for (NavigationButton nb : pinnedButtons)
+		pinnedButtonTooltips.clear();
+		for (NavigationButton navigationButton : pinnedButtons)
 		{
-			pinnedOrderTooltips.add(safeTooltip(nb));
+			pinnedButtonTooltips.add(serializeTooltip(navigationButton));
 		}
 		if (DEBUG)
 		{
-			LOGGER.debug("reorderPinnedBySavedOrderFromList: newOrder={}", pinnedOrderTooltips);
+			LOGGER.debug("reorderPinnedBySavedOrderFromList: newOrder={}", pinnedButtonTooltips);
 		}
 	}
 
+	// ToDo: maybe we can just put these in an ordered list instead of sorting each time?
 	private void reorderPinnedBySavedOrder()
 	{
 		// sort pinnedButtons according to pinnedOrderTooltips list order
-		pinnedButtons.sort((a, b) -> Integer.compare(pinnedOrderTooltips.indexOf(safeTooltip(a)), pinnedOrderTooltips.indexOf(safeTooltip(b))));
+		pinnedButtons.sort((a, b) -> Integer.compare(pinnedButtonTooltips.indexOf(serializeTooltip(a)), pinnedButtonTooltips.indexOf(serializeTooltip(b))));
 		if (DEBUG)
 		{
-			LOGGER.debug("reorderPinnedBySavedOrder: order={}", pinnedOrderTooltips);
+			LOGGER.debug("reorderPinnedBySavedOrder: order={}", pinnedButtonTooltips);
 		}
 	}
 
@@ -1880,38 +1818,38 @@ public class SortableJTabbedPane extends JPanel
 	{
 		if (!hidingEnabled)
 		{
-			hiddenZoneButton.setVisible(false);
-			java.awt.Component parent = hiddenButtonsPanel.getParent();
+			btnShowHiddenButtonsPopup.setVisible(false);
+			java.awt.Component parent = hiddenPluginsPanel.getParent();
 			if (parent != null)
 			{
 				parent.setVisible(false);
 			}
-			hiddenButtonsPanel.setVisible(false);
+			hiddenPluginsPanel.setVisible(false);
 			return;
 		}
 		int count = hiddenButtons.size();
-		boolean visible = count > 0 || isDragging;
+		boolean visible = count > 0 || isButtonBeingDragged();
 
-		hiddenZoneButton.setText(null);
-		hiddenZoneButton.setToolTipText(count + " hidden");
-		hiddenZoneButton.setVisible(visible);
-		hiddenZoneButton.setForeground(new Color(255,255,255));
+		btnShowHiddenButtonsPopup.setText(null);
+		btnShowHiddenButtonsPopup.setToolTipText(count + " hidden");
+		btnShowHiddenButtonsPopup.setVisible(visible);
+		btnShowHiddenButtonsPopup.setForeground(new Color(255,255,255));
 
 		// Show the left selection stripe on the hidden-zone button when the
 		// currently selected navigation is one of the hidden items. Also set
 		// the button's selected state so FlatLaf styles apply consistently.
 		boolean selectedHidden = selectedNavigation != null && hiddenButtons.contains(selectedNavigation);
-		hiddenZoneButton.setSelected(selectedHidden);
-		updateButtonStripe(hiddenZoneButton, selectedHidden);
+		btnShowHiddenButtonsPopup.setSelected(selectedHidden);
+		updateButtonStripe(btnShowHiddenButtonsPopup, selectedHidden);
 
 		// Also toggle visibility of the hidden wrapper (parent) so it doesn't occupy
 		// space when there are no hidden items and we're not dragging.
-		java.awt.Component parent = hiddenButtonsPanel.getParent();
+		java.awt.Component parent = hiddenPluginsPanel.getParent();
 		if (parent != null)
 		{
 			parent.setVisible(visible);
 		}
-		hiddenButtonsPanel.setVisible(visible);
+		hiddenPluginsPanel.setVisible(visible);
 
 		if (DEBUG)
 		{
@@ -1919,6 +1857,7 @@ public class SortableJTabbedPane extends JPanel
 		}
 	}
 
+	// ToDo: seems to contain a lot of duplicated code which is also used for non-hidden buttons
 	private void showHiddenPopup()
 	{
 		if (!hidingEnabled)
@@ -1949,13 +1888,13 @@ public class SortableJTabbedPane extends JPanel
 		List<NavigationButton> orderedHidden = new ArrayList<>();
 
 		// Add hidden items that are in the saved pinned order first
-		for (String tt : pinnedOrderTooltips)
+		for (String tooltip : pinnedButtonTooltips)
 		{
-			for (NavigationButton nb : hiddenButtons)
+			for (NavigationButton navButton : hiddenButtons)
 			{
-				if (safeTooltip(nb).equals(tt) && !orderedHidden.contains(nb))
+				if (serializeTooltip(navButton).equals(tooltip) && !orderedHidden.contains(navButton))
 				{
-					orderedHidden.add(nb);
+					orderedHidden.add(navButton);
 				}
 			}
 		}
@@ -1966,13 +1905,13 @@ public class SortableJTabbedPane extends JPanel
 		remaining.sort(NavigationButton.COMPARATOR);
 		orderedHidden.addAll(remaining);
 
-		for (NavigationButton nb : orderedHidden)
+		for (NavigationButton navButton : orderedHidden)
 		{
-			Icon icon = new ImageIcon(ImageUtil.resizeImage(nb.getIcon(), ICON_SIZE, ICON_SIZE));
-			PaintedButton item = new PaintedButton(icon);
-			item.setToolTipText(nb.getTooltip());
+			// This is pretty ugly, PaintedButton should probably be a wrapper around NavigationButton
+			Icon icon = new ImageIcon(ImageUtil.resizeImage(navButton.getIcon(), ICON_SIZE, ICON_SIZE));
+			PaintedButton item = new PaintedButton(this, icon);
+			item.setToolTipText(navButton.getTooltip());
 			item.setHorizontalAlignment(JButton.CENTER);
-			// make button compact
 			item.putClientProperty(FlatClientProperties.STYLE, "iconTextGap:8; focusWidth:0; margin:0,0,0,0;");
 			item.setBorder(new javax.swing.border.EmptyBorder(4,4,4,4));
 
@@ -1982,7 +1921,7 @@ public class SortableJTabbedPane extends JPanel
 				@Override
 				public void mouseEntered(MouseEvent e)
 				{
-					if (!isDragging)
+					if (!isButtonBeingDragged())
 					{
 						item.setHover(true);
 					}
@@ -1994,12 +1933,14 @@ public class SortableJTabbedPane extends JPanel
 					item.setHover(false);
 				}
 			});
-			Dimension pref = item.getPreferredSize();
-			Dimension fixed = new Dimension(ICON_SIZE + 12, pref.height);
-			item.setPreferredSize(fixed);
-			item.setMaximumSize(fixed);
+			Dimension preferredSize = item.getPreferredSize();
+			Dimension maxSize = new Dimension(ICON_SIZE + 12, preferredSize.height);
+			item.setPreferredSize(maxSize);
+			item.setMaximumSize(maxSize);
+
 			// show selected stripe if this panel is currently active
-			if (nb == selectedNavigation)
+			// ToDo: this should also be included in the PaintedButton class if possible (like stated above)
+			if (navButton == selectedNavigation)
 			{
 				item.setBorder(new javax.swing.border.CompoundBorder(
 					new javax.swing.border.MatteBorder(0, 3, 0, 0, SELECTED_STRIPE_COLOR),
@@ -2015,9 +1956,9 @@ public class SortableJTabbedPane extends JPanel
 			// Use the shared toggle handler so clicking the already-active
 			// hidden item will deactivate (collapse) the panel like regular buttons.
 			item.addActionListener(e -> {
-				if (!isDragging)
+				if (!isButtonBeingDragged())
 				{
-					handleButtonClick(nb);
+					handleButtonClick(navButton);
 					popup.setVisible(false);
 					popup.dispose();
 				}
@@ -2035,7 +1976,7 @@ public class SortableJTabbedPane extends JPanel
 					dragging[0] = false;
 					if (DEBUG)
 					{
-						LOGGER.debug("hiddenPopup mousePressed: nav={}, screenPoint={}", safeTooltip(nb), pressScreen[0]);
+						LOGGER.debug("hiddenPopup mousePressed: nav={}, screenPoint={}", serializeTooltip(navButton), pressScreen[0]);
 					}
 				}
 
@@ -2063,18 +2004,20 @@ public class SortableJTabbedPane extends JPanel
 			item.addMouseMotionListener(new MouseMotionAdapter()
 			{
 				@Override
-				public void mouseDragged(MouseEvent e)
+				public void mouseDragged(MouseEvent event)
 				{
+					// ToDo: why is this is an array?
 					if (pressScreen[0] != null && !dragging[0])
 					{
-						int dx = e.getXOnScreen() - pressScreen[0].x;
-						int dy = e.getYOnScreen() - pressScreen[0].y;
-						double dist = Math.sqrt((double) dx * dx + (double) dy * dy);
-						if (dist > DRAG_THRESHOLD)
+						int dX = event.getXOnScreen() - pressScreen[0].x;
+						int dY = event.getYOnScreen() - pressScreen[0].y;
+						double distance = Math.sqrt((double) dX * dX + (double) dY * dY);
+						if (distance > DRAG_THRESHOLD)
 						{
+							// ToDo: why is this is an array?
 							dragging[0] = true;
 							// start the global drag (ghost + placeholder) and close the popup
-							SortableJTabbedPane.this.startDrag(nb, pressScreen[0]);
+							SortableJTabbedPane.this.startDrag(navButton, pressScreen[0]);
 							popup.setVisible(false);
 							popup.dispose();
 						}
@@ -2091,26 +2034,26 @@ public class SortableJTabbedPane extends JPanel
 		// position the popup near the hidden button (so it appears over the sidebar)
 		try
 		{
-			Point btnOnScreen = hiddenZoneButton.getLocationOnScreen();
+			Point btnOnScreen = btnShowHiddenButtonsPopup.getLocationOnScreen();
 			int x = btnOnScreen.x - popup.getWidth();
 			// prefer showing the popup above the hidden button
 			int y = btnOnScreen.y - popup.getHeight();
 			// fallback to below the button if not enough space above
 			if (y < 0)
 			{
-				y = btnOnScreen.y + hiddenZoneButton.getHeight();
+				y = btnOnScreen.y + btnShowHiddenButtonsPopup.getHeight();
 			}
 			if (x < 0)
 			{
-				x = btnOnScreen.x + hiddenZoneButton.getWidth();
+				x = btnOnScreen.x + btnShowHiddenButtonsPopup.getWidth();
 			}
 			popup.setLocation(x, y);
 		}
 		catch (IllegalComponentStateException ex)
 		{
 			// component not showing on screen; fallback to positioning relative to this component
-			Point loc = hiddenZoneButton.getLocation();
-			SwingUtilities.convertPointToScreen(loc, hiddenZoneButton);
+			Point loc = btnShowHiddenButtonsPopup.getLocation();
+			SwingUtilities.convertPointToScreen(loc, btnShowHiddenButtonsPopup);
 			popup.setLocation(loc);
 		}
 
@@ -2146,8 +2089,8 @@ public class SortableJTabbedPane extends JPanel
 		{
 			return;
 		}
-		pinnedOrderTooltips.clear();
-		hiddenTooltips.clear();
+		pinnedButtonTooltips.clear();
+		hiddenButtonTooltips.clear();
 		String pinnedCsv = configManager.getConfiguration(CONFIG_GROUP, CONFIG_PINNED);
 		if ((pinnedCsv == null || pinnedCsv.isEmpty()))
 		{
@@ -2162,7 +2105,7 @@ public class SortableJTabbedPane extends JPanel
 				{
 					// Attempt to decode stored token (new encoded format). If decoding
 					// fails, treat token as legacy raw tooltip and keep it as-is.
-					pinnedOrderTooltips.add(decodeFromStorage(tok));
+					pinnedButtonTooltips.add(decodeFromStorage(tok));
 				}
 			}
 		}
@@ -2177,7 +2120,7 @@ public class SortableJTabbedPane extends JPanel
 			{
 				if (!tok.isEmpty())
 				{
-					hiddenTooltips.add(decodeFromStorage(tok));
+					hiddenButtonTooltips.add(decodeFromStorage(tok));
 				}
 			}
 		}
@@ -2187,6 +2130,7 @@ public class SortableJTabbedPane extends JPanel
 		}
 	}
 
+	// ToDo: find out if we can use a better identifier than tooltip strings
 	private void saveState()
 	{
 		if (configManager == null)
@@ -2195,10 +2139,10 @@ public class SortableJTabbedPane extends JPanel
 		}
 		// Encode tooltips before persisting so commas and other special
 		// characters don't break the CSV parsing on load.
-		String pinnedCsv = pinnedOrderTooltips.stream()
+		String pinnedCsv = pinnedButtonTooltips.stream()
 			.map(SortableJTabbedPane::encodeForStorage)
 			.collect(Collectors.joining(","));
-		String hiddenCsv = hiddenTooltips.stream()
+		String hiddenCsv = hiddenButtonTooltips.stream()
 			.map(SortableJTabbedPane::encodeForStorage)
 			.collect(Collectors.joining(","));
 		if (pinnedCsv.isEmpty())
@@ -2223,6 +2167,7 @@ public class SortableJTabbedPane extends JPanel
 		}
 	}
 
+	// ToDo: is this needed? Our data has already been serialized anyway
 	private static String encodeForStorage(String s)
 	{
 		if (s == null)
@@ -2232,8 +2177,10 @@ public class SortableJTabbedPane extends JPanel
 		return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(StandardCharsets.UTF_8));
 	}
 
+	// ToDo: is this needed? Our data has already been serialized anyway
 	private static String decodeFromStorage(String tok)
 	{
+		// ToDo: wtf is tok
 		if (tok == null || tok.isEmpty())
 		{
 			return tok;
@@ -2250,14 +2197,14 @@ public class SortableJTabbedPane extends JPanel
 		}
 	}
 
-	private static String safeTooltip(NavigationButton nb)
+	//ToDo: this method doesn't seem safe, what if tooltip changes or is not unique?
+	private static String serializeTooltip(NavigationButton navigationButton)
 	{
-		if (nb == null)
+		if (navigationButton == null)
 		{
 			return "<null>";
 		}
-		String tt = nb.getTooltip();
-		return tt == null ? "<untitled>" : tt;
+		String tooltipString = navigationButton.getTooltip();
+		return tooltipString == null ? "<untitled>" : tooltipString;
 	}
-
 }
