@@ -451,7 +451,7 @@ public class SortableJTabbedPane extends JPanel
 	 * Add a new navigation button with associated plugin panel.
 	 * @param navBtn navigation button
 	 */
-	public void addNavigation(NavigationButton navBtn)
+	public void insertTab(NavigationButton navBtn)
 	{
 		if (navBtn == null || navBtn.getPanel() == null || buttonMap.containsKey(navBtn))
 		{
