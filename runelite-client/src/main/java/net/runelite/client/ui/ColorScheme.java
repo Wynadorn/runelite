@@ -41,6 +41,7 @@ public class ColorScheme
 	public static final Color DARK_GRAY_COLOR = new Color(40, 40, 40);
 	public static final Color MEDIUM_GRAY_COLOR = new Color(77, 77, 77);
 	public static final Color LIGHT_GRAY_COLOR = new Color(165, 165, 165);
+	public static final Color WHITE_COLOR = new Color(255, 255, 255);
 
 	public static final Color TEXT_COLOR = new Color(198, 198, 198);
 	public static final Color CONTROL_COLOR = new Color(30, 30, 30);
@@ -69,5 +70,8 @@ public class ColorScheme
 
 	/* The background color of the scrollbar's track */
 	public static final Color SCROLL_TRACK_COLOR = new Color(25, 25, 25);
+
+	/* The color for transparent elements */
+	public static final Color TRANSPARENT_COLOR = new Color(0, 0, 0, 0);
 
 }

@@ -64,16 +64,16 @@ class PaintedButton extends JButton
 		java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
 		try
 		{
-			Color bg = SortableJTabbedPane.BUTTON_BG;
+			Color background = ColorScheme.DARKER_GRAY_COLOR;
 			if (forcedBackground != null)
 			{
-				bg = forcedBackground;
+				background = forcedBackground;
 			}
 			else if (hover && !isSelected() && !this.sortableJTabbedPane.isButtonBeingDragged())
 			{
-				bg = new Color(0x111111);
+				background = ColorScheme.BORDER_COLOR;
 			}
-			g2.setColor(bg);
+			g2.setColor(background);
 			g2.fillRect(0, 0, getWidth(), getHeight());
 		}
 		finally

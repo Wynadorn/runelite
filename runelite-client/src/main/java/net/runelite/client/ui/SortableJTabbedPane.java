@@ -4,7 +4,6 @@ import java.awt.AWTEvent;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -68,18 +67,10 @@ public class SortableJTabbedPane extends JPanel
 {
 	// Spacing / sizing
 	// ToDo: remove remaining magic values in the code and replace with constants
-	private static final int ICON_SIZE = 16;
+	private static final int TAB_SIZE = 16;
 	private static final int MIN_PINNED_HEIGHT = 24;
 	private static final int DEFAULT_WIDTH = 274; // approximate previous sidebar panel width (reduced by 26px)
 	private static final int DRAG_THRESHOLD = 8; // pixels (euclidean)
-	
-	// Colors
-	// ToDo: verify the correct colors are being used
-	// ToDo: ensure no hardcoded colors are used unless defined here, see if there is a colorscheme constant we can use instead
-	private static final Color SELECTED_STRIPE_COLOR = new Color(0xFF7700);
-    static final Color BUTTON_BG = new Color(0x1e1e1e);
-	private static final Color HIGHLIGHT_HIDDEN_COLOR = new Color(0x444444);
-	private static final Color HIGHLIGHT_SORTED_COLOR = new Color(0x3A3A3A);
 	
 	// Parameter keys for config persistence
 	private final ConfigManager configManager;
@@ -206,18 +197,17 @@ public class SortableJTabbedPane extends JPanel
 		// Initialize the navigation buttons panel
 		navigationButtonsPanel.setLayout(new BorderLayout());
 		navigationButtonsPanel.setOpaque(true);
-		navigationButtonsPanel.setBackground(BUTTON_BG);
-		navigationButtonsPanel.setBorder(new javax.swing.border.MatteBorder(0, 1, 0, 0, new Color(0x171717)));
+		navigationButtonsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		navigationButtonsPanel.setBorder(new javax.swing.border.MatteBorder(0, 1, 0, 0, ColorScheme.BORDER_COLOR));
 
 		// Initialize the pinned buttons panel and add to navigation panel
 		JPanel pinnedPluginsPanelWrapper = CreatePinnedPluginsPanel();
 		navigationButtonsPanel.add(pinnedPluginsPanelWrapper, BorderLayout.NORTH);
 
 		// Initialize the sorted buttons panel
-		sortedPluginsPanel.setBackground(BUTTON_BG);
 		sortedPluginsPanel.setLayout(new BoxLayout(sortedPluginsPanel, BoxLayout.Y_AXIS));
 		sortedPluginsPanel.setOpaque(true);
-		sortedPluginsPanel.setBackground(BUTTON_BG);
+		sortedPluginsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		navigationButtonsPanel.add(sortedPluginsPanel, BorderLayout.CENTER);
 
 		// ToDo: dont delete this, it is required when custom window chrome is disabled
@@ -252,7 +242,7 @@ public class SortableJTabbedPane extends JPanel
 					Graphics activePanelIndicatorGraphic = graphic.create();
 					try
 					{
-						activePanelIndicatorGraphic.setColor(SELECTED_STRIPE_COLOR);					
+						activePanelIndicatorGraphic.setColor(ColorScheme.BRAND_ORANGE);					
 						Rectangle bounds = SwingUtilities.convertRectangle(activeButton, btnShowHiddenButtonsPopup.getBounds(), component);
 						activePanelIndicatorGraphic.fillRect(0, bounds.y, 3, bounds.height);
 					}
@@ -293,7 +283,7 @@ public class SortableJTabbedPane extends JPanel
 		// Initialize the panel which holds the pinned buttons
 		pinnedPluginsPanel.setLayout(new BoxLayout(pinnedPluginsPanel, BoxLayout.Y_AXIS));
 		pinnedPluginsPanel.setOpaque(true);
-		pinnedPluginsPanel.setBackground(BUTTON_BG);
+		pinnedPluginsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		pinnedPluginsPanel.setMinimumSize(new Dimension(0, 0));
 		pinnedPluginsPanelWrapper.add(pinnedPluginsPanel, BorderLayout.CENTER);
 		
@@ -318,7 +308,7 @@ public class SortableJTabbedPane extends JPanel
 		// Initialize the panel which holds the button to show the popup for hidden plugins
 		hiddenPluginsPanel.setLayout(new BorderLayout());
 		hiddenPluginsPanel.setOpaque(true);
-		hiddenPluginsPanel.setBackground(BUTTON_BG);
+		hiddenPluginsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		hiddenPluginsPanel.setMinimumSize(new Dimension(0, MIN_PINNED_HEIGHT));
 		hiddenPluginsPanel.setPreferredSize(new Dimension(0, MIN_PINNED_HEIGHT));
 		hiddenPluginsPanel.setMaximumSize(new Dimension(Short.MAX_VALUE, MIN_PINNED_HEIGHT));
@@ -341,7 +331,7 @@ public class SortableJTabbedPane extends JPanel
 		ImageIcon sharedHiddenIcon = null;
 		if (bi != null)
 		{
-			sharedHiddenIcon = new ImageIcon(ImageUtil.resizeImage(bi, ICON_SIZE, ICON_SIZE));
+			sharedHiddenIcon = new ImageIcon(ImageUtil.resizeImage(bi, TAB_SIZE, TAB_SIZE));
 			hiddenPluginsPopupButton.setIcon(sharedHiddenIcon);
 		}
 		else
@@ -796,7 +786,7 @@ public class SortableJTabbedPane extends JPanel
 		{
 			LOGGER.debug("buildButton: tooltip={}", serializeTooltip(navBtn));
 		}
-		Icon icon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), ICON_SIZE, ICON_SIZE));
+		Icon icon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), TAB_SIZE, TAB_SIZE));
 		PaintedButton btn = new PaintedButton(this, icon);
 		btn.setToolTipText(navBtn.getTooltip());
 		btn.setHorizontalAlignment(JButton.LEFT);
@@ -1080,7 +1070,7 @@ public class SortableJTabbedPane extends JPanel
 		}
 
 		// create placeholder sized like the button
-		Dimension prefSize = buttonBeingDragged != null ? buttonBeingDragged.getPreferredSize() : new Dimension(ICON_SIZE + 12, 24);
+		Dimension prefSize = buttonBeingDragged != null ? buttonBeingDragged.getPreferredSize() : new Dimension(TAB_SIZE + 12, 24);
 		insertionPlaceholder = new JPanel()
 		{
 			@Override
@@ -1094,14 +1084,14 @@ public class SortableJTabbedPane extends JPanel
 		// prefer to only constrain height; allow width to be governed by container to avoid expanding sidebar
 		insertionPlaceholder.setPreferredSize(new Dimension(0, prefSize.height));
 		insertionPlaceholder.setMinimumSize(new Dimension(0, prefSize.height));
-		insertionPlaceholder.setBorder(new javax.swing.border.MatteBorder(1, 0, 1, 0, new Color(0x555555)));
+		insertionPlaceholder.setBorder(new javax.swing.border.MatteBorder(1, 0, 1, 0, ColorScheme.MEDIUM_GRAY_COLOR));
 		insertionPlaceholder.setOpaque(true);
-		insertionPlaceholder.setBackground(new Color(0x333333));
+		insertionPlaceholder.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		// Add a small icon to the placeholder so the drop target shows the dragged icon
 		try
 		{
-			Icon phIcon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), ICON_SIZE, ICON_SIZE));
+			Icon phIcon = new ImageIcon(ImageUtil.resizeImage(navBtn.getIcon(), TAB_SIZE, TAB_SIZE));
 			javax.swing.JLabel iconLabel = new javax.swing.JLabel(phIcon);
 			iconLabel.setOpaque(false);
 			// match the button border insets so placeholder aligns with buttons
@@ -1153,13 +1143,13 @@ public class SortableJTabbedPane extends JPanel
 				if (icoObj instanceof java.awt.Image)
 				{
 					int ix = 8;
-					int iy = (h - ICON_SIZE) / 2;
-					g.drawImage((java.awt.Image) icoObj, ix, iy, ICON_SIZE, ICON_SIZE, null);
+					int iy = (h - TAB_SIZE) / 2;
+					g.drawImage((java.awt.Image) icoObj, ix, iy, TAB_SIZE, TAB_SIZE, null);
 				}
 				else if (icoObj instanceof Icon)
 				{
 					int ix = 8;
-					int iy = (h - ICON_SIZE) / 2;
+					int iy = (h - TAB_SIZE) / 2;
 					((Icon) icoObj).paintIcon(null, g, ix, iy);
 				}
 			}
@@ -1184,7 +1174,7 @@ public class SortableJTabbedPane extends JPanel
 			dragGhostWindow = new javax.swing.JWindow(owner);
 			dragGhostWindow.getContentPane().add(ghostLabel);
 			dragGhostWindow.pack();
-			dragGhostWindow.setBackground(new Color(0, 0, 0, 0));
+			dragGhostWindow.setBackground(ColorScheme.TRANSPARENT_COLOR);
 			dragGhostWindow.setAlwaysOnTop(true);
 			// compute offset relative to original button if available
 			if (buttonBeingDragged != null)
@@ -1520,7 +1510,7 @@ public class SortableJTabbedPane extends JPanel
 		javax.swing.JComponent parentComp = (javax.swing.JComponent) parent;
 		if (!hidingEnabled)
 		{
-			parentComp.setBackground(BUTTON_BG);
+			parentComp.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 			parentComp.setOpaque(true);
 			btnShowHiddenButtonsPopup.setForcedBackground(null);
 			btnShowHiddenButtonsPopup.setHover(false);
@@ -1533,15 +1523,15 @@ public class SortableJTabbedPane extends JPanel
 		if (show)
 		{
 			parentComp.setOpaque(true);
-			parentComp.setBackground(HIGHLIGHT_HIDDEN_COLOR);
+			parentComp.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
 
 			// Also tint the hidden-zone button itself so the cue is visible on the button
-			btnShowHiddenButtonsPopup.setForcedBackground(HIGHLIGHT_HIDDEN_COLOR);
+			btnShowHiddenButtonsPopup.setForcedBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
 		}
 		else
 		{
-			// restore to the consistent BUTTON_BG
-			parentComp.setBackground(BUTTON_BG);
+			// restore to the consistent background color
+			parentComp.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 			parentComp.setOpaque(true);
 			btnShowHiddenButtonsPopup.setForcedBackground(null);
 			btnShowHiddenButtonsPopup.setHover(false);
@@ -1563,7 +1553,7 @@ public class SortableJTabbedPane extends JPanel
 		final int outerMargin = 3;
 		final float stroke = 1f;
 		final float[] dash = {2f, 2f};
-		final int dashedBoxSize = ICON_SIZE + innerGap * 2;
+		final int dashedBoxSize = TAB_SIZE + innerGap * 2;
 		final int phHeight = dashedBoxSize + outerMargin * 2;
 
 		JPanel placeholderPanel = new JPanel(new BorderLayout())
@@ -1605,7 +1595,7 @@ public class SortableJTabbedPane extends JPanel
 		ImageIcon pinIcon = null;
 		if (pinImg != null)
 		{
-			pinIcon = new ImageIcon(ImageUtil.resizeImage(pinImg, ICON_SIZE, ICON_SIZE));
+			pinIcon = new ImageIcon(ImageUtil.resizeImage(pinImg, TAB_SIZE, TAB_SIZE));
 		}
 
 		if (pinIcon != null)
@@ -1615,7 +1605,7 @@ public class SortableJTabbedPane extends JPanel
 		else
 		{
 			// fallback: use an empty transparent image so the icon is always defined
-			pinPlaceholderIcon = new ImageIcon(new BufferedImage(ICON_SIZE, ICON_SIZE, BufferedImage.TYPE_INT_ARGB));
+			pinPlaceholderIcon = new ImageIcon(new BufferedImage(TAB_SIZE, TAB_SIZE, BufferedImage.TYPE_INT_ARGB));
 		}
 
 		javax.swing.JLabel pinLabel = new javax.swing.JLabel(pinPlaceholderIcon);
@@ -1705,7 +1695,7 @@ public class SortableJTabbedPane extends JPanel
 		if (showHighlight)
 		{
 			sortedPluginsPanel.setOpaque(true);
-			sortedPluginsPanel.setBackground(HIGHLIGHT_SORTED_COLOR);
+			sortedPluginsPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
 
 			// Tint each button in the sorted area so the highlight is visible
 			for (Component component : sortedPluginsPanel.getComponents())
@@ -1715,12 +1705,12 @@ public class SortableJTabbedPane extends JPanel
 					JButton button = (JButton) component;
 					if (button instanceof PaintedButton)
 					{
-						((PaintedButton) button).setForcedBackground(HIGHLIGHT_SORTED_COLOR);
+						((PaintedButton) button).setForcedBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
 					}
 					else
 					{
 						button.setOpaque(true);
-						button.setBackground(HIGHLIGHT_SORTED_COLOR);
+						button.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
 					}
 					button.revalidate();
 					button.repaint();
@@ -1731,8 +1721,8 @@ public class SortableJTabbedPane extends JPanel
 		}
 		else
 		{
-			// restore to consistent BUTTON_BG
-			sortedPluginsPanel.setBackground(BUTTON_BG);
+			// restore to consistent background color
+			sortedPluginsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 			sortedPluginsPanel.setOpaque(true);
 			for (Component component : sortedPluginsPanel.getComponents())
 			{
@@ -1746,7 +1736,7 @@ public class SortableJTabbedPane extends JPanel
 					else
 					{
 						button.setOpaque(true);
-						button.setBackground(BUTTON_BG);
+						button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 					}
 					button.revalidate();
 					button.repaint();
@@ -1833,7 +1823,7 @@ public class SortableJTabbedPane extends JPanel
 		btnShowHiddenButtonsPopup.setText(null);
 		btnShowHiddenButtonsPopup.setToolTipText(count + " hidden");
 		btnShowHiddenButtonsPopup.setVisible(visible);
-		btnShowHiddenButtonsPopup.setForeground(new Color(255,255,255));
+		btnShowHiddenButtonsPopup.setForeground(ColorScheme.WHITE_COLOR);
 
 		// Show the left selection stripe on the hidden-zone button when the
 		// currently selected navigation is one of the hidden items. Also set
@@ -1881,7 +1871,7 @@ public class SortableJTabbedPane extends JPanel
 		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		// light gray border around popup
-		panel.setBorder(new javax.swing.border.LineBorder(new Color(0xCCCCCC), 1));
+		panel.setBorder(new javax.swing.border.LineBorder(ColorScheme.BORDER_COLOR, 1));
 
 		// Order hidden items to match sidebar ordering:
 		// 1) pinned order (from saved `pinnedOrderTooltips`), 2) the same sorted order (NavigationButton.COMPARATOR)
@@ -1908,7 +1898,7 @@ public class SortableJTabbedPane extends JPanel
 		for (NavigationButton navButton : orderedHidden)
 		{
 			// This is pretty ugly, PaintedButton should probably be a wrapper around NavigationButton
-			Icon icon = new ImageIcon(ImageUtil.resizeImage(navButton.getIcon(), ICON_SIZE, ICON_SIZE));
+			Icon icon = new ImageIcon(ImageUtil.resizeImage(navButton.getIcon(), TAB_SIZE, TAB_SIZE));
 			PaintedButton item = new PaintedButton(this, icon);
 			item.setToolTipText(navButton.getTooltip());
 			item.setHorizontalAlignment(JButton.CENTER);
@@ -1934,7 +1924,7 @@ public class SortableJTabbedPane extends JPanel
 				}
 			});
 			Dimension preferredSize = item.getPreferredSize();
-			Dimension maxSize = new Dimension(ICON_SIZE + 12, preferredSize.height);
+			Dimension maxSize = new Dimension(TAB_SIZE + 12, preferredSize.height);
 			item.setPreferredSize(maxSize);
 			item.setMaximumSize(maxSize);
 
@@ -1943,7 +1933,7 @@ public class SortableJTabbedPane extends JPanel
 			if (navButton == selectedNavigation)
 			{
 				item.setBorder(new javax.swing.border.CompoundBorder(
-					new javax.swing.border.MatteBorder(0, 3, 0, 0, SELECTED_STRIPE_COLOR),
+					new javax.swing.border.MatteBorder(0, 3, 0, 0, ColorScheme.BRAND_ORANGE),
 					new javax.swing.border.EmptyBorder(4, 4, 4, 4)
 				));
 			}
