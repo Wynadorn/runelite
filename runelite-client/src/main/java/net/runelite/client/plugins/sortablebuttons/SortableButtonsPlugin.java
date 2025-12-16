@@ -14,7 +14,7 @@ import net.runelite.client.eventbus.Subscribe;
 @PluginDescriptor(
 	name = "Sortable Buttons",
 	description = "Configure pinning and hiding for sidebar buttons.",
-	enabledByDefault = true
+	enabledByDefault = false
 )
 public class SortableButtonsPlugin extends Plugin
 {

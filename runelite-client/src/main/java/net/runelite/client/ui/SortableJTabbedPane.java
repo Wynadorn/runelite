@@ -137,6 +137,9 @@ public class SortableJTabbedPane extends JPanel
 	// Button to show the list of hidden buttons in a popup
 	private PaintedButton btnShowHiddenButtonsPopup;
 
+	// Currently-open hidden popup dialog (if any)
+	private JDialog hiddenPopup;
+
 	// ToDo: why is this a private getter? 
 	@Getter
 	private NavigationButton selectedNavigation;
@@ -312,7 +315,9 @@ public class SortableJTabbedPane extends JPanel
 		hiddenPluginsPanel.setMinimumSize(new Dimension(0, MIN_PINNED_HEIGHT));
 		hiddenPluginsPanel.setPreferredSize(new Dimension(0, MIN_PINNED_HEIGHT));
 		hiddenPluginsPanel.setMaximumSize(new Dimension(Short.MAX_VALUE, MIN_PINNED_HEIGHT));
-		hiddenPluginsPanel.add(CreateHiddenPluginsPopupButton(), BorderLayout.CENTER);
+		// Assign the created button to the field so it is available later
+		btnShowHiddenButtonsPopup = CreateHiddenPluginsPopupButton();
+		hiddenPluginsPanel.add(btnShowHiddenButtonsPopup, BorderLayout.CENTER);
 		hiddenPluginsPanelWrapper.add(hiddenPluginsPanel, BorderLayout.CENTER);
 
 		return hiddenPluginsPanelWrapper;
@@ -508,9 +513,10 @@ public class SortableJTabbedPane extends JPanel
 			// Todo: this should not be reachable; set selection only happens on button click
 			return;
 		}
-		if (navBtn != null && (!buttonMap.containsKey(navBtn) || !panelMap.containsKey(navBtn)))
+		if (navBtn != null && !panelMap.containsKey(navBtn))
 		{
-			// ToDo: this shoudn't happen, but if it does we should just attempt to register the button instead
+			// If we don't have a panel for this nav entry, ignore. It's fine
+			// if the button itself isn't currently visible (e.g. hidden popup items).
 			if (DEBUG)
 			{
 				LOGGER.debug("setSelectedNavigation: ignored unknown navBtn={}", navBtn);
@@ -1850,6 +1856,15 @@ public class SortableJTabbedPane extends JPanel
 	// ToDo: seems to contain a lot of duplicated code which is also used for non-hidden buttons
 	private void showHiddenPopup()
 	{
+		// If popup is already open, close it (toggle behavior)
+		if (hiddenPopup != null && hiddenPopup.isShowing())
+		{
+			// Popup is already open: close it.
+			hiddenPopup.dispose();
+			hiddenPopup = null;
+			return;
+		}
+
 		if (!hidingEnabled)
 		{
 			return;
@@ -1951,6 +1966,7 @@ public class SortableJTabbedPane extends JPanel
 					handleButtonClick(navButton);
 					popup.setVisible(false);
 					popup.dispose();
+					hiddenPopup = null;
 				}
 			});
 
@@ -2008,8 +2024,9 @@ public class SortableJTabbedPane extends JPanel
 							dragging[0] = true;
 							// start the global drag (ghost + placeholder) and close the popup
 							SortableJTabbedPane.this.startDrag(navButton, pressScreen[0]);
-							popup.setVisible(false);
-							popup.dispose();
+								popup.setVisible(false);
+								popup.dispose();
+								hiddenPopup = null;
 						}
 					}
 				}
@@ -2051,6 +2068,8 @@ public class SortableJTabbedPane extends JPanel
 		popup.setFocusableWindowState(true);
 		popup.setAlwaysOnTop(true);
 		popup.setVisible(true);
+			// track the open popup so we can toggle/close it later
+			hiddenPopup = popup;
 
 		// hide popup on focus loss (behaves like a popup)
 		popup.addWindowFocusListener(new WindowAdapter()
@@ -2060,6 +2079,7 @@ public class SortableJTabbedPane extends JPanel
 			{
 				popup.setVisible(false);
 				popup.dispose();
+				hiddenPopup = null;
 			}
 		});
 
