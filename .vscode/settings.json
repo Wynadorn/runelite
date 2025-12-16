@@ -1,0 +1,40 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.errors.incompleteClasspath.severity": "warning",
+  "java.autobuild.enabled": true,
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.compiler.lombok.annotationProcessing.enabled": true,
+  "java.jdt.ls.java.home": "C:\\Program Files (vm)\\Java\\jdk\\jdk-21.0.2+13",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-11",
+      "path": "C:\\Program Files (vm)\\Java\\jdk\\jdk-11.0.22+7"
+    },
+    {
+      "name": "JavaSE-21",
+      "path": "C:\\Program Files (vm)\\Java\\jdk\\jdk-21.0.2+13",
+      "default": true
+    }
+  ]
+  ,
+  // Ensure sources + javadoc are downloaded for better navigation
+  "java.maven.downloadSources": true,
+  "java.maven.downloadJavadocs": true,
+  // Decompile attached library classes when sources unavailable
+  "java.contentProvider.preferred": "fernflower",
+  // Reduce noisy build popups; rely on explicit tasks
+  "java.configuration.enableAsyncCompilation": false,
+  // Improve multi-module import reliability
+  "maven.executable.path": "mvn",
+  "maven.view": "hierarchical",
+  // Performance: don't auto-run tests on import
+  "java.test.config": {
+    "workingDirectory": "${workspaceFolder}"
+  },
+  // Allow launching even if LS thinks build failed
+  "java.debug.settings.forceBuildBeforeLaunch": false,
+  "java.debug.settings.hotCodeReplace": "auto",
+  "java.configuration.validateOnBuild": false,
+  "runelite.debug.vmArgs": "--add-opens=java.desktop/sun.awt=ALL-UNNAMED -Drunelite.devmode=true -Drunelite.pluginhub.disabled=true",
+  "runelite.debug.projectName": "runelite-client"
+}

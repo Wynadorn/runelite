@@ -1,0 +1,1 @@
+ mvn -DskipTests -T 1C -pl runelite-client -am package 

@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Run RuneLite",
+      "request": "launch",
+      "mainClass": "net.runelite.client.RuneLite",
+      "preLaunchTask": "mvn: prepare dev (plugin+client)",
+      "vmArgs": "${config:runelite.debug.vmArgs} -ea -Drunelite.pluginhub.version=1.12.8 -Duser.home=.\\debug-profile -Drunelite.debug.ui=true",
+      "args": "--developer-mode --debug",
+      "projectName": "client",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
